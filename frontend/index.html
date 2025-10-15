@@ -1,19 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FastAPI Video Call</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI for IA</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <h2>FastAPI P2P Video Call</h2>
-  <div class="video-container">
-    <video id="localVideo" autoplay playsinline muted></video>
-    <video id="remoteVideo" autoplay playsinline></video>
-  </div>
-  <button id="startBtn">Start Call</button>
+    <div id="setup">
+        <div class="setup-container">
+            <h2>Join my AI for IA meeting confarence</h2>
+            <input type="text" id="roomInput" placeholder="Enter Room Name" value="main-room" />
+            <input type="text" id="nameInput" placeholder="Enter Your Name" value="Guest" />
+            <button id="joinBtn">
+                <i class="fas fa-sign-in-alt"></i> Join meeting
+            </button>
+        </div>
+    </div>
 
-  <script src="script.js"></script>
+    <div id="room" class="hidden">
+        <div id="videos">
+            </div>
+        <div id="controls">
+            <button id="muteBtn" class="control-btn">
+                <i class="fas fa-microphone"></i>
+                <span>Mute</span>
+            </button>
+            <button id="cameraBtn" class="control-btn">
+                <i class="fas fa-video"></i>
+                <span>Cam Off</span>
+            </button>
+            <button id="shareScreenBtn" class="control-btn">
+                <i class="fas fa-desktop"></i>
+                <span>Share Screen</span>
+            </button>
+            <button id="endBtn" class="control-btn end-call">
+                <i class="fas fa-phone-slash"></i>
+                <span>Leave</span>
+            </button>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
 </body>
 </html>

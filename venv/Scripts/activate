@@ -35,7 +35,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\Shubham\Desktop\video-call-app\venv"
+VIRTUAL_ENV="C:\Users\mrshu\Desktop\video_call\venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
