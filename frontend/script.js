@@ -77,12 +77,15 @@ function createVideoPlayer(id, name, stream, isMuted = false, audioEnabled = tru
 }
 
 function setLocalStream(stream) {
+    console.log("Setting local stream"); // Add logging
     localStream = stream;
     let localVideoContainer = document.getElementById("localVideoContainer");
     if (!localVideoContainer) {
         const audioEnabled = stream.getAudioTracks()[0]?.enabled ?? true;
+        console.log("Creating local video player"); // Add logging
         createVideoPlayer("localVideoContainer", `${myName} (You)`, stream, true, audioEnabled);
     } else {
+        console.log("Updating local video player"); // Add logging
         localVideoContainer.querySelector("video").srcObject = stream;
     }
 
@@ -96,18 +99,30 @@ function setLocalStream(stream) {
 }
 
 function createPeerConnection(remoteId, remoteName, initialAudioState) {
-    const pc = new RTCPeerConnection();
+    console.log("Setting up peer connection for:", remoteId); // Add logging
+    const pc = new RTCPeerConnection({
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+    });
     pcs[remoteId] = pc;
 
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    localStream.getTracks().forEach(track => {
+        console.log("Adding local track to peer connection:", track.kind); // Add logging
+        pc.addTrack(track, localStream);
+    });
 
     pc.ontrack = (event) => {
+        console.log("Received remote track:", event.track.kind); // Add logging
         const remoteStream = event.streams[0];
         const containerId = `remoteContainer-${remoteId}`;
         let remoteContainer = document.getElementById(containerId);
         if (!remoteContainer) {
+            console.log("Creating new video player for:", remoteName); // Add logging
             createVideoPlayer(containerId, remoteName, remoteStream, false, initialAudioState);
         } else {
+            console.log("Updating existing video player for:", remoteName); // Add logging
             remoteContainer.querySelector("video").srcObject = remoteStream;
         }
         monitorAudioLevel(remoteStream, containerId);
@@ -174,9 +189,12 @@ async function joinCall(room, name) {
     ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
         if (msg.from === myId) return;
+        
+        console.log("Received message:", msg.type, "from:", msg.from); // Add logging
 
         let pc = pcs[msg.from];
         if (!pc && (msg.type === "offer" || msg.type === "join")) {
+            console.log("Creating new peer connection for:", msg.from); // Add logging
             pc = createPeerConnection(msg.from, msg.name, msg.audioEnabled);
         }
 
