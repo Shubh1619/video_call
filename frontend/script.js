@@ -21,8 +21,6 @@ let myName = "";
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const SPEAKING_THRESHOLD = 5;
 
-// --- All functions (monitorAudioLevel, createVideoPlayer, etc.) remain the same ---
-
 function monitorAudioLevel(stream, videoContainerId) {
     if (!audioContext || !stream.getAudioTracks().length) return;
     const analyser = audioContext.createAnalyser();
@@ -77,15 +75,15 @@ function createVideoPlayer(id, name, stream, isMuted = false, audioEnabled = tru
 }
 
 function setLocalStream(stream) {
-    console.log("Setting local stream"); // Add logging
+    console.log("Setting local stream");
     localStream = stream;
     let localVideoContainer = document.getElementById("localVideoContainer");
     if (!localVideoContainer) {
         const audioEnabled = stream.getAudioTracks()[0]?.enabled ?? true;
-        console.log("Creating local video player"); // Add logging
+        console.log("Creating local video player");
         createVideoPlayer("localVideoContainer", `${myName} (You)`, stream, true, audioEnabled);
     } else {
-        console.log("Updating local video player"); // Add logging
+        console.log("Updating local video player");
         localVideoContainer.querySelector("video").srcObject = stream;
     }
 
@@ -99,33 +97,77 @@ function setLocalStream(stream) {
 }
 
 function createPeerConnection(remoteId, remoteName, initialAudioState) {
-    console.log("Setting up peer connection for:", remoteId); // Add logging
+    console.log("Setting up peer connection for:", remoteId);
     const pc = new RTCPeerConnection({
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+        ],
+        iceCandidatePoolSize: 10
     });
-    pcs[remoteId] = pc;
 
-    localStream.getTracks().forEach(track => {
-        console.log("Adding local track to peer connection:", track.kind); // Add logging
-        pc.addTrack(track, localStream);
-    });
+    pc.onconnectionstatechange = () => {
+        console.log(`Connection state for ${remoteId}: ${pc.connectionState}`);
+        if (pc.connectionState === 'connected') {
+            console.log(`Peer ${remoteId} successfully connected`);
+        } else if (pc.connectionState === 'failed') {
+            console.log(`Connection failed for peer ${remoteId}, attempting reconnection`);
+            setTimeout(() => {
+                if (pcs[remoteId] === pc) {
+                    delete pcs[remoteId];
+                    ws.send(JSON.stringify({ type: "join", from: myId, name: myName }));
+                }
+            }, 1000);
+        }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+        console.log(`ICE connection state for ${remoteId}: ${pc.iceConnectionState}`);
+        if (pc.iceConnectionState === 'disconnected') {
+            console.log(`ICE disconnected for peer ${remoteId}, checking connection...`);
+        }
+    };
+
+    pc.onicegatheringstatechange = () => {
+        console.log(`ICE gathering state for ${remoteId}: ${pc.iceGatheringState}`);
+    };
+
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            console.log("Adding local track to peer connection:", track.kind);
+            pc.addTrack(track, localStream);
+        });
+    }
 
     pc.ontrack = (event) => {
-        console.log("Received remote track:", event.track.kind); // Add logging
-        const remoteStream = event.streams[0];
-        const containerId = `remoteContainer-${remoteId}`;
-        let remoteContainer = document.getElementById(containerId);
-        if (!remoteContainer) {
-            console.log("Creating new video player for:", remoteName); // Add logging
-            createVideoPlayer(containerId, remoteName, remoteStream, false, initialAudioState);
-        } else {
-            console.log("Updating existing video player for:", remoteName); // Add logging
-            remoteContainer.querySelector("video").srcObject = remoteStream;
+        try {
+            console.log("Received remote track:", event.track.kind);
+            const remoteStream = event.streams[0];
+            if (!remoteStream) {
+                console.error("No remote stream available in ontrack event");
+                return;
+            }
+
+            const containerId = `remoteContainer-${remoteId}`;
+            let remoteContainer = document.getElementById(containerId);
+            
+            if (!remoteContainer) {
+                console.log("Creating new video player for:", remoteName);
+                createVideoPlayer(containerId, remoteName, remoteStream, false, initialAudioState);
+            } else {
+                console.log("Updating existing video player for:", remoteName);
+                const videoElement = remoteContainer.querySelector("video");
+                if (videoElement) {
+                    videoElement.srcObject = remoteStream;
+                }
+            }
+            monitorAudioLevel(remoteStream, containerId);
+        } catch (err) {
+            console.error("Error handling remote track:", err);
         }
-        monitorAudioLevel(remoteStream, containerId);
     };
 
     pc.onicecandidate = (event) => {
@@ -134,7 +176,53 @@ function createPeerConnection(remoteId, remoteName, initialAudioState) {
         }
     };
 
+    pcs[remoteId] = pc;
     return pc;
+}
+
+async function handleWebRTCMessage(msg, pc) {
+    try {
+        switch (msg.type) {
+            case "join":
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                const joinAudioEnabled = localStream.getAudioTracks()[0]?.enabled ?? true;
+                ws.send(JSON.stringify({
+                    ...pc.localDescription.toJSON(),
+                    from: myId,
+                    to: msg.from,
+                    name: myName,
+                    audioEnabled: joinAudioEnabled
+                }));
+                break;
+
+            case "offer":
+                await pc.setRemoteDescription(new RTCSessionDescription(msg));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                const offerAudioEnabled = localStream.getAudioTracks()[0]?.enabled ?? true;
+                ws.send(JSON.stringify({
+                    ...pc.localDescription.toJSON(),
+                    from: myId,
+                    to: msg.from,
+                    name: myName,
+                    audioEnabled: offerAudioEnabled
+                }));
+                break;
+
+            case "answer":
+                await pc.setRemoteDescription(new RTCSessionDescription(msg));
+                break;
+
+            case "candidate":
+                if (msg.candidate) {
+                    await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                }
+                break;
+        }
+    } catch (err) {
+        console.error("Error handling WebRTC message:", err);
+    }
 }
 
 async function joinCall(room, name) {
@@ -149,14 +237,12 @@ async function joinCall(room, name) {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         cameraStream = stream;
 
-        // --- NEW: Apply saved media states after getting the stream ---
         const savedMicMuted = sessionStorage.getItem('micMuted') === 'true';
         const savedCameraOff = sessionStorage.getItem('cameraOff') === 'true';
 
         const audioTrack = stream.getAudioTracks()[0];
         if (audioTrack && savedMicMuted) {
             audioTrack.enabled = false;
-            // Update UI
             muteBtn.classList.add("toggled");
             muteBtn.querySelector("i").className = 'fas fa-microphone-slash';
             muteBtn.querySelector("span").textContent = 'Unmute';
@@ -165,12 +251,10 @@ async function joinCall(room, name) {
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack && savedCameraOff) {
             videoTrack.enabled = false;
-            // Update UI
             cameraBtn.classList.add("toggled");
             cameraBtn.querySelector("i").className = 'fas fa-video-slash';
             cameraBtn.querySelector("span").textContent = 'Cam On';
         }
-        // --- END NEW SECTION ---
 
         setLocalStream(cameraStream);
         monitorAudioLevel(cameraStream, "localVideoContainer");
@@ -187,53 +271,70 @@ async function joinCall(room, name) {
     };
 
     ws.onmessage = async (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.from === myId) return;
-        
-        console.log("Received message:", msg.type, "from:", msg.from); // Add logging
+        try {
+            const msg = JSON.parse(event.data);
+            if (msg.from === myId) return;
+            
+            console.log("Received message:", msg.type, "from:", msg.from);
 
-        let pc = pcs[msg.from];
-        if (!pc && (msg.type === "offer" || msg.type === "join")) {
-            console.log("Creating new peer connection for:", msg.from); // Add logging
-            pc = createPeerConnection(msg.from, msg.name, msg.audioEnabled);
-        }
+            let pc = pcs[msg.from];
+            
+            // Create or recreate peer connection if needed
+            if (!pc && (msg.type === "offer" || msg.type === "join")) {
+                console.log("Creating new peer connection for:", msg.from);
+                pc = createPeerConnection(msg.from, msg.name, msg.audioEnabled);
+            } else if (pc && (pc.connectionState === 'closed' || pc.connectionState === 'failed')) {
+                console.log("Recreating failed peer connection for:", msg.from);
+                pc.close();
+                pc = createPeerConnection(msg.from, msg.name, msg.audioEnabled);
+            }
 
-        switch (msg.type) {
-            case "join":
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                const joinAudioEnabled = localStream.getAudioTracks()[0]?.enabled ?? true;
-                ws.send(JSON.stringify({ ...pc.localDescription.toJSON(), from: myId, to: msg.from, name: myName, audioEnabled: joinAudioEnabled }));
-                break;
-            case "offer":
-                await pc.setRemoteDescription(new RTCSessionDescription(msg));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                const offerAudioEnabled = localStream.getAudioTracks()[0]?.enabled ?? true;
-                ws.send(JSON.stringify({ ...pc.localDescription.toJSON(), from: myId, to: msg.from, name: myName, audioEnabled: offerAudioEnabled }));
-                break;
-            case "answer":
-                await pc.setRemoteDescription(new RTCSessionDescription(msg));
-                break;
-            case "candidate":
-                if (pc) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                break;
-            case "audio-toggle":
+            if (!pc) {
+                console.error("No valid peer connection available");
+                return;
+            }
+
+            // Handle WebRTC signaling messages
+            if (["join", "offer", "answer", "candidate"].includes(msg.type)) {
+                await handleWebRTCMessage(msg, pc);
+            } 
+            // Handle other message types
+            else if (msg.type === "audio-toggle") {
                 const remoteContainer = document.getElementById(`remoteContainer-${msg.from}`);
                 if (remoteContainer) {
                     const micIcon = remoteContainer.querySelector('.mic-icon');
-                    micIcon.classList.toggle("muted", !msg.enabled);
-                    micIcon.querySelector("i").className = `fas ${msg.enabled ? 'fa-microphone' : 'fa-microphone-slash'}`;
+                    if (micIcon) {
+                        micIcon.classList.toggle("muted", !msg.enabled);
+                        micIcon.querySelector("i").className = `fas ${msg.enabled ? 'fa-microphone' : 'fa-microphone-slash'}`;
+                    }
                 }
-                break;
-            case "user-left":
+            }
+            else if (msg.type === "user-left") {
                 if (pcs[msg.id]) {
                     pcs[msg.id].close();
                     delete pcs[msg.id];
-                    document.getElementById(`remoteContainer-${msg.id}`)?.remove();
+                    const containerToRemove = document.getElementById(`remoteContainer-${msg.id}`);
+                    if (containerToRemove) {
+                        containerToRemove.remove();
+                    }
                 }
-                break;
+            }
+        } catch (err) {
+            console.error("Error handling websocket message:", err);
         }
+    };
+
+    ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+        console.log("WebSocket connection closed, attempting to reconnect...");
+        setTimeout(() => {
+            if (ws.readyState === WebSocket.CLOSED) {
+                joinCall(room, name);
+            }
+        }, 3000);
     };
 }
 
@@ -243,14 +344,13 @@ joinBtn.onclick = () => {
     joinCall(room, name);
 };
 
-// --- MODIFIED: Save state on click ---
 muteBtn.onclick = () => {
     const audioTrack = localStream.getAudioTracks()[0];
     if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         const isMuted = !audioTrack.enabled;
         
-        sessionStorage.setItem('micMuted', isMuted); // Save state
+        sessionStorage.setItem('micMuted', isMuted);
         
         muteBtn.classList.toggle("toggled", isMuted);
         muteBtn.querySelector("i").className = `fas ${isMuted ? 'fa-microphone-slash' : 'fa-microphone'}`;
@@ -266,14 +366,13 @@ muteBtn.onclick = () => {
     }
 };
 
-// --- MODIFIED: Save state on click ---
 cameraBtn.onclick = () => {
     const videoTrack = localStream.getVideoTracks()[0];
     if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
         const isOff = !videoTrack.enabled;
 
-        sessionStorage.setItem('cameraOff', isOff); // Save state
+        sessionStorage.setItem('cameraOff', isOff);
 
         cameraBtn.classList.toggle("toggled", isOff);
         cameraBtn.querySelector("i").className = `fas ${isOff ? 'fa-video-slash' : 'fa-video'}`;
@@ -291,16 +390,23 @@ shareScreenBtn.onclick = async () => {
             monitorAudioLevel(cameraStream, "localVideoContainer");
         };
     } catch (err) {
+        console.error("Error sharing screen:", err);
         setLocalStream(cameraStream);
         monitorAudioLevel(cameraStream, "localVideoContainer");
     }
 };
 
-// --- MODIFIED: Clear all session data ---
 endBtn.onclick = () => {
-    sessionStorage.clear(); // Clear all session data
+    sessionStorage.clear();
 
-    Object.values(pcs).forEach(pc => pc.close());
+    Object.values(pcs).forEach(pc => {
+        try {
+            pc.close();
+        } catch (err) {
+            console.error("Error closing peer connection:", err);
+        }
+    });
+    
     if (ws) ws.close();
     if (localStream) localStream.getTracks().forEach(track => track.stop());
     if (audioContext) audioContext.close().then(() => window.location.reload());
