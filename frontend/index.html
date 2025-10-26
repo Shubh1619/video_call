@@ -1,30 +1,511 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI for IA</title>
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"
-    />
-    <link rel="stylesheet" href="frontend\style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI for IA - Secure Video Conference</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --primary-dark: #0d47a1;
+            --secondary: #34a853;
+            --danger: #ea4335;
+            --warning: #f9ab00;
+            --dark: #202124;
+            --dark-light: #3c4043;
+            --gray: #5f6368;
+            --light: #e8f0fe;
+            --white: #ffffff;
+            --shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            --border-radius: 12px;
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: var(--white);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .hidden { 
+            display: none !important; 
+        }
+
+        /* Setup Screen */
+        #setup {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .setup-container {
+            background-color: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            text-align: center;
+            max-width: 450px;
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .setup-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .setup-header i {
+            font-size: 28px;
+            color: var(--primary);
+        }
+
+        .setup-header h2 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .security-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 14px;
+            color: var(--secondary);
+            margin-bottom: 10px;
+        }
+
+        .security-badge i {
+            font-size: 16px;
+        }
+
+        #setup input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--white);
+            border-radius: 8px;
+            font-size: 16px;
+            transition: var(--transition);
+        }
+
+        #setup input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background-color: rgba(255, 255, 255, 0.15);
+        }
+
+        #setup input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        #joinBtn {
+            background: linear-gradient(to right, var(--primary), var(--primary-dark));
+            color: var(--white);
+            border: none;
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        #joinBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(26, 115, 232, 0.4);
+        }
+
+        /* Room Screen */
+        #room {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background-color: var(--dark);
+        }
+
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .room-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .room-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+
+        .room-name i {
+            color: var(--primary);
+        }
+
+        .participant-count {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .security-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            color: var(--secondary);
+        }
+
+        /* Videos Container */
+        #videos {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+            padding: 16px;
+            overflow-y: auto;
+            align-items: start;
+            justify-items: center;
+        }
+
+        /* Screen sharing layout */
+        .screen-sharing-active #videos {
+            grid-template-columns: 1fr;
+            grid-auto-flow: dense;
+        }
+
+        .screen-sharing-active .screen-share-container {
+            grid-column: 1;
+            width: 100%;
+            height: 70vh;
+            max-height: 70vh;
+        }
+
+        .screen-sharing-active .participant-video {
+            max-width: 250px;
+            max-height: 180px;
+        }
+
+        .participants-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            width: 100%;
+            margin-top: 12px;
+        }
+
+        /* Video Player */
+        .video-player-container {
+            position: relative;
+            background-color: #000;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+            width: 100%;
+            height: 100%;
+            max-height: 300px;
+        }
+
+        .video-player-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #localVideoContainer {
+            border: 2px solid var(--primary);
+        }
+
+        .video-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .participant-name {
+            color: white;
+            font-weight: 500;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .participant-name.you::after {
+            content: "(You)";
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .status-indicators {
+            display: flex;
+            gap: 8px;
+        }
+
+        .status-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .status-icon.muted {
+            background-color: var(--danger);
+        }
+
+        .status-icon.camera-off {
+            background-color: var(--gray);
+        }
+
+        /* Speaking highlight */
+        .video-player-container.speaking {
+            box-shadow: 0 0 0 3px var(--secondary);
+        }
+
+        /* Controls */
+        #controls {
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            padding: 16px;
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            flex-shrink: 0;
+            z-index: 20;
+        }
+
+        .control-btn {
+            background-color: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 12px;
+            transition: var(--transition);
+        }
+
+        .control-btn i {
+            font-size: 20px;
+        }
+
+        .control-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .control-btn.toggled {
+            background-color: var(--primary);
+        }
+
+        .control-btn.end-call {
+            background-color: var(--danger);
+        }
+
+        .control-btn.end-call:hover {
+            background-color: #c5221f;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .setup-container {
+                padding: 30px 20px;
+            }
+            
+            #videos {
+                grid-template-columns: 1fr;
+                padding: 10px;
+                gap: 10px;
+            }
+            
+            .video-player-container {
+                max-height: 250px;
+            }
+            
+            .screen-sharing-active .screen-share-container {
+                height: 50vh;
+            }
+            
+            .screen-sharing-active .participant-video {
+                max-width: 180px;
+                max-height: 130px;
+            }
+            
+            .control-btn {
+                width: 60px;
+                height: 60px;
+            }
+            
+            .room-header {
+                padding: 10px 15px;
+                flex-direction: column;
+                gap: 10px;
+                align-items: flex-start;
+            }
+            
+            .room-info {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .setup-container {
+                padding: 25px 15px;
+            }
+            
+            #controls {
+                gap: 10px;
+                padding: 12px;
+            }
+            
+            .control-btn {
+                width: 55px;
+                height: 55px;
+                font-size: 11px;
+            }
+            
+            .control-btn i {
+                font-size: 18px;
+            }
+            
+            .video-overlay {
+                padding: 8px;
+            }
+            
+            .participant-name {
+                font-size: 12px;
+            }
+            
+            .status-icon {
+                width: 24px;
+                height: 24px;
+                font-size: 10px;
+            }
+        }
+
+        /* Animation for joining */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .video-player-container {
+            animation: fadeIn 0.5s ease;
+        }
+
+        /* Scrollbar styling */
+        #videos::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #videos::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        #videos::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 4px;
+        }
+    </style>
 </head>
+
 <body>
     <div id="setup">
         <div class="setup-container">
-            <h2>Join my AI for IA meeting confarence</h2>
-            <input type="text" id="roomInput" placeholder="Enter Room Name" value="main-room" />
+            <div class="setup-header">
+                <i class="fas fa-video"></i>
+                <h2>AI for IA Meeting</h2>
+            </div>
+            <div class="security-badge">
+                <i class="fas fa-shield-alt"></i>
+                <span>End-to-End Encrypted</span>
+            </div>
+            <input type="text" id="roomInput" placeholder="Enter Room Name" />
             <input type="text" id="nameInput" placeholder="Enter Your Name" value="Guest" />
             <button id="joinBtn">
-                <i class="fas fa-sign-in-alt"></i> Join meeting
+                <i class="fas fa-sign-in-alt"></i>
+                <span>Join Secure Meeting</span>
             </button>
         </div>
     </div>
 
     <div id="room" class="hidden">
-        <div id="videos">
+        <div class="room-header">
+            <div class="room-info">
+                <div class="room-name">
+                    <i class="fas fa-door-open"></i>
+                    <span id="currentRoomName">Room Name</span>
+                </div>
+                <div class="participant-count">
+                    <i class="fas fa-users"></i>
+                    <span id="participantCount">1 participant</span>
+                </div>
             </div>
+            <div class="security-indicator">
+                <i class="fas fa-lock"></i>
+                <span>Secured Connection</span>
+            </div>
+        </div>
+        
+        <div id="videos"></div>
+        
         <div id="controls">
             <button id="muteBtn" class="control-btn">
                 <i class="fas fa-microphone"></i>
@@ -32,11 +513,11 @@
             </button>
             <button id="cameraBtn" class="control-btn">
                 <i class="fas fa-video"></i>
-                <span>Cam Off</span>
+                <span>Video</span>
             </button>
             <button id="shareScreenBtn" class="control-btn">
                 <i class="fas fa-desktop"></i>
-                <span>Share Screen</span>
+                <span>Share</span>
             </button>
             <button id="endBtn" class="control-btn end-call">
                 <i class="fas fa-phone-slash"></i>
@@ -45,6 +526,394 @@
         </div>
     </div>
 
-    <script src="frontend\script.js"></script>
+    <script>
+        // --- DOM Elements ---
+        const setupDiv = document.getElementById("setup");
+        const roomDiv = document.getElementById("room");
+        const roomInput = document.getElementById("roomInput");
+        const nameInput = document.getElementById("nameInput");
+        const joinBtn = document.getElementById("joinBtn");
+        const videosDiv = document.getElementById("videos");
+        const muteBtn = document.getElementById("muteBtn");
+        const cameraBtn = document.getElementById("cameraBtn");
+        const shareScreenBtn = document.getElementById("shareScreenBtn");
+        const endBtn = document.getElementById("endBtn");
+        const currentRoomName = document.getElementById("currentRoomName");
+        const participantCount = document.getElementById("participantCount");
+
+        // --- WebRTC ---
+        let ws, localStream, cameraStream, pcs = {};
+        let myId = Math.random().toString(36).substring(2, 9);
+        let myName = "";
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const SPEAKING_THRESHOLD = 5;
+        let isScreenSharing = false;
+
+        // Get room ID from URL
+        function getRoomIdFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('room_id') || urlParams.get('room') || '';
+        }
+
+        function monitorAudioLevel(stream, videoContainerId) {
+            if (!audioContext || !stream.getAudioTracks().length) return;
+            const analyser = audioContext.createAnalyser();
+            const source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+            analyser.fftSize = 512;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const container = document.getElementById(videoContainerId);
+            function checkVolume() {
+                if (!container) return;
+                analyser.getByteFrequencyData(dataArray);
+                let sum = dataArray.reduce((a, b) => a + b, 0);
+                if (stream.getAudioTracks()[0]?.enabled && sum / dataArray.length > SPEAKING_THRESHOLD) {
+                    container.classList.add('speaking');
+                } else container.classList.remove('speaking');
+                requestAnimationFrame(checkVolume);
+            }
+            requestAnimationFrame(checkVolume);
+        }
+
+        function createVideoPlayer(id, name, stream, isMuted = false, audioEnabled = true, isScreenShare = false, isLocal = false) {
+            const container = document.createElement("div");
+            container.id = id;
+            container.className = "video-player-container";
+            
+            if (isScreenShare) {
+                container.classList.add("screen-share-container");
+            } else if (isScreenSharing && !isLocal) {
+                container.classList.add("participant-video");
+            }
+            
+            const video = document.createElement("video");
+            video.autoplay = true; 
+            video.playsInline = true; 
+            video.muted = isMuted; 
+            video.srcObject = stream;
+            
+            const overlay = document.createElement("div");
+            overlay.className = "video-overlay";
+            
+            const nameTag = document.createElement("div");
+            nameTag.className = `participant-name ${isLocal ? 'you' : ''}`;
+            nameTag.textContent = name;
+            if (isLocal) {
+                nameTag.textContent = `${name} `;
+            }
+            
+            const statusIndicators = document.createElement("div");
+            statusIndicators.className = "status-indicators";
+            
+            const micIcon = document.createElement("div");
+            micIcon.className = `status-icon ${!audioEnabled ? 'muted' : ''}`;
+            micIcon.innerHTML = `<i class="fas ${audioEnabled ? 'fa-microphone' : 'fa-microphone-slash'}"></i>`;
+            
+            const cameraIcon = document.createElement("div");
+            cameraIcon.className = `status-icon camera-off`;
+            cameraIcon.innerHTML = `<i class="fas fa-video"></i>`;
+            cameraIcon.style.display = 'none';
+            
+            statusIndicators.appendChild(micIcon);
+            statusIndicators.appendChild(cameraIcon);
+            
+            overlay.appendChild(nameTag);
+            overlay.appendChild(statusIndicators);
+            
+            container.appendChild(video);
+            container.appendChild(overlay);
+            
+            videosDiv.appendChild(container);
+            
+            // Update participant count
+            updateParticipantCount();
+            
+            return {
+                container,
+                micIcon,
+                cameraIcon
+            };
+        }
+
+        function updateParticipantCount() {
+            const count = document.querySelectorAll('.video-player-container').length;
+            participantCount.textContent = `${count} participant${count !== 1 ? 's' : ''}`;
+        }
+
+        function setLocalStream(stream) {
+            localStream = stream;
+            let localVideo = document.getElementById("localVideoContainer");
+            if (!localVideo) {
+                const audioEnabled = stream.getAudioTracks()[0]?.enabled ?? true;
+                createVideoPlayer("localVideoContainer", myName, stream, true, audioEnabled, false, true);
+            } else {
+                localVideo.querySelector("video").srcObject = stream;
+            }
+
+            for (const id in pcs) {
+                const pc = pcs[id];
+                stream.getTracks().forEach(track => {
+                    const sender = pc.getSenders().find(s => s.track && s.track.kind === track.kind);
+                    if (sender) sender.replaceTrack(track).catch(console.error);
+                });
+            }
+        }
+
+        function createPeerConnection(remoteId, remoteName, initialAudioState) {
+            const pc = new RTCPeerConnection({ 
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ] 
+            });
+            pcs[remoteId] = pc;
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+            pc.ontrack = (e) => {
+                const stream = e.streams[0]; 
+                const containerId = `remoteContainer-${remoteId}`;
+                let remoteContainer = document.getElementById(containerId);
+                if (!remoteContainer) {
+                    createVideoPlayer(containerId, remoteName, stream, false, initialAudioState);
+                } else {
+                    remoteContainer.querySelector("video").srcObject = stream;
+                }
+                monitorAudioLevel(stream, containerId);
+            };
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ 
+                        type: "candidate", 
+                        candidate: e.candidate, 
+                        from: myId, 
+                        to: remoteId 
+                    }));
+                }
+            };
+
+            return pc;
+        }
+
+        async function joinCall(room, name) {
+            myName = name;
+            setupDiv.classList.add("hidden"); 
+            roomDiv.classList.remove("hidden");
+            currentRoomName.textContent = room;
+            
+            sessionStorage.setItem('room', room); 
+            sessionStorage.setItem('name', name);
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                cameraStream = stream;
+                const savedMic = sessionStorage.getItem('micMuted') === 'true';
+                const savedCam = sessionStorage.getItem('cameraOff') === 'true';
+                
+                if (stream.getAudioTracks()[0] && savedMic) stream.getAudioTracks()[0].enabled = false;
+                if (stream.getVideoTracks()[0] && savedCam) stream.getVideoTracks()[0].enabled = false;
+                
+                setLocalStream(cameraStream);
+                monitorAudioLevel(cameraStream, "localVideoContainer");
+                
+                // Update button states based on saved preferences
+                updateControlButtons();
+                
+            } catch (e) { 
+                console.error("Media error", e); 
+                return; 
+            }
+
+            // Connect to WebSocket
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${location.host}/ws/${room}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => { 
+                ws.send(JSON.stringify({ 
+                    type: "join", 
+                    from: myId, 
+                    name: myName, 
+                    audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true 
+                })); 
+            };
+            
+            ws.onmessage = async (e) => {
+                const msg = JSON.parse(e.data); 
+                if (msg.from === myId) return;
+                
+                let pc = pcs[msg.from];
+                if (!pc && (msg.type === "offer" || msg.type === "join")) {
+                    pc = createPeerConnection(msg.from, msg.name, msg.audioEnabled);
+                }
+                
+                switch (msg.type) {
+                    case "join":
+                        const offer = await pc.createOffer(); 
+                        await pc.setLocalDescription(offer);
+                        ws.send(JSON.stringify({ 
+                            ...pc.localDescription.toJSON(), 
+                            from: myId, 
+                            to: msg.from, 
+                            name: myName, 
+                            audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true 
+                        }));
+                        break;
+                    case "offer":
+                        await pc.setRemoteDescription(new RTCSessionDescription(msg));
+                        const answer = await pc.createAnswer(); 
+                        await pc.setLocalDescription(answer);
+                        ws.send(JSON.stringify({ 
+                            ...pc.localDescription.toJSON(), 
+                            from: myId, 
+                            to: msg.from, 
+                            name: myName, 
+                            audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true 
+                        }));
+                        break;
+                    case "answer": 
+                        await pc.setRemoteDescription(new RTCSessionDescription(msg)); 
+                        break;
+                    case "candidate": 
+                        if (pc) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); 
+                        break;
+                    case "audio-toggle":
+                        const container = document.getElementById(`remoteContainer-${msg.from}`);
+                        if (container) {
+                            const micIcon = container.querySelector(".status-icon");
+                            micIcon.classList.toggle("muted", !msg.enabled);
+                            micIcon.querySelector("i").className = `fas ${msg.enabled ? 'fa-microphone' : 'fa-microphone-slash'}`;
+                        }
+                        break;
+                    case "user-left":
+                        if (pcs[msg.id]) { 
+                            pcs[msg.id].close(); 
+                            delete pcs[msg.id]; 
+                            document.getElementById(`remoteContainer-${msg.id}`)?.remove(); 
+                            updateParticipantCount();
+                        }
+                        break;
+                }
+            };
+        }
+
+        function updateControlButtons() {
+            // Update mute button
+            const audioTrack = localStream.getAudioTracks()[0];
+            if (audioTrack) {
+                const isMuted = !audioTrack.enabled;
+                muteBtn.classList.toggle("toggled", isMuted);
+                muteBtn.querySelector("i").className = `fas ${isMuted ? 'fa-microphone-slash' : 'fa-microphone'}`;
+                muteBtn.querySelector("span").textContent = isMuted ? 'Unmute' : 'Mute';
+            }
+            
+            // Update camera button
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                const isCameraOff = !videoTrack.enabled;
+                cameraBtn.classList.toggle("toggled", isCameraOff);
+                cameraBtn.querySelector("i").className = isCameraOff ? 'fas fa-video-slash' : 'fas fa-video';
+                cameraBtn.querySelector("span").textContent = isCameraOff ? 'Camera On' : 'Camera Off';
+            }
+        }
+
+        // Set room input value from URL
+        const roomFromUrl = getRoomIdFromURL();
+        roomInput.value = roomFromUrl;
+
+        joinBtn.onclick = () => { 
+            joinCall(roomInput.value.trim() || "default-room", nameInput.value.trim() || "Guest"); 
+        };
+
+        muteBtn.onclick = () => {
+            const track = localStream.getAudioTracks()[0];
+            if (track) {
+                track.enabled = !track.enabled;
+                sessionStorage.setItem('micMuted', !track.enabled);
+                
+                muteBtn.classList.toggle("toggled", !track.enabled);
+                muteBtn.querySelector("i").className = `fas ${track.enabled ? 'fa-microphone' : 'fa-microphone-slash'}`;
+                muteBtn.querySelector("span").textContent = track.enabled ? 'Mute' : 'Unmute';
+                
+                // Update local video indicator
+                const localVideo = document.getElementById("localVideoContainer");
+                if (localVideo) {
+                    const micIcon = localVideo.querySelector(".status-icon");
+                    micIcon.classList.toggle("muted", !track.enabled);
+                    micIcon.querySelector("i").className = `fas ${track.enabled ? 'fa-microphone' : 'fa-microphone-slash'}`;
+                }
+            }
+        };
+
+        cameraBtn.onclick = () => {
+            const track = localStream.getVideoTracks()[0];
+            if (track) {
+                track.enabled = !track.enabled;
+                sessionStorage.setItem('cameraOff', !track.enabled);
+                
+                cameraBtn.classList.toggle("toggled", !track.enabled);
+                cameraBtn.querySelector("i").className = track.enabled ? 'fas fa-video' : 'fas fa-video-slash';
+                cameraBtn.querySelector("span").textContent = track.enabled ? 'Camera Off' : 'Camera On';
+                
+                // Update local video indicator
+                const localVideo = document.getElementById("localVideoContainer");
+                if (localVideo) {
+                    const cameraIcon = localVideo.querySelectorAll(".status-icon")[1];
+                    if (cameraIcon) {
+                        cameraIcon.style.display = !track.enabled ? 'flex' : 'none';
+                    }
+                }
+            }
+        };
+
+        shareScreenBtn.onclick = async () => {
+            try {
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                isScreenSharing = true;
+                roomDiv.classList.add('screen-sharing-active');
+                
+                // Update all existing participant videos to use participant-video class
+                document.querySelectorAll('.video-player-container:not(#localVideoContainer)').forEach(container => {
+                    container.classList.add('participant-video');
+                });
+                
+                setLocalStream(screenStream);
+                monitorAudioLevel(screenStream, "localVideoContainer");
+                
+                screenStream.getVideoTracks()[0].onended = () => {
+                    isScreenSharing = false;
+                    roomDiv.classList.remove('screen-sharing-active');
+                    
+                    // Remove participant-video class from all videos
+                    document.querySelectorAll('.participant-video').forEach(container => {
+                        container.classList.remove('participant-video');
+                    });
+                    
+                    setLocalStream(cameraStream);
+                    monitorAudioLevel(cameraStream, "localVideoContainer");
+                };
+            } catch (e) {
+                isScreenSharing = false;
+                roomDiv.classList.remove('screen-sharing-active');
+                setLocalStream(cameraStream);
+                monitorAudioLevel(cameraStream, "localVideoContainer");
+            }
+        };
+
+        endBtn.onclick = () => {
+            sessionStorage.clear();
+            Object.values(pcs).forEach(pc => pc.close());
+            if (ws) ws.close();
+            if (localStream) localStream.getTracks().forEach(track => track.stop());
+            if (audioContext) audioContext.close().then(() => window.location.reload());
+            else window.location.reload();
+        };
+
+        window.addEventListener('load', () => {
+            const savedRoom = sessionStorage.getItem('room');
+            const savedName = sessionStorage.getItem('name');
+            if (savedRoom && savedName) joinCall(savedRoom, savedName);
+        });
+    </script>
 </body>
 </html>

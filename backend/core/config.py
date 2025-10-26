@@ -4,7 +4,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MY_DOMAIN="https://video-call-92hl.onrender.com"
+# MY_DOMAIN="https://video-call-92hl.onrender.com"
+MY_DOMAIN="http://127.0.0.1:10000"
 
 
 DATABASE_URL =os.getenv("DATABASE_URL")
