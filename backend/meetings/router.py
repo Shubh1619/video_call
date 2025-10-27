@@ -1,8 +1,8 @@
+import asyncio ,os, uuid, datetime, json, logging
 from fastapi import APIRouter, Depends, Body, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-import os, uuid, datetime, json, logging
-from typing import Dict
+from typing import Dict 
 
 # --- Local Imports ---
 from backend.core.db import get_db
@@ -136,58 +136,91 @@ def create_instant_meeting(
 rooms: Dict[str, Dict[str, WebSocket]] = {}
 
 # --- ✅ FIXED: Changed from @app.websocket to @router.websocket ---
-# Now this route will be correctly included in your main app
+
+# --- ✅ Fully updated WebSocket endpoint for Render deployment ---
 @router.websocket("/ws/{room_name}")
 async def websocket_endpoint(websocket: WebSocket, room_name: str):
-    
-    # --- ✅ FIXED: Just call accept(). ---
-    # The CORSMiddleware in main.py will handle the origin check.
+    client_host = websocket.client.host if websocket.client else "unknown"
+    logging.info(f"🟢 Incoming WebSocket connection from {client_host} for room: {room_name}")
     await websocket.accept()
     client_id = ""
-    
+
+    # --- ✅ Keep connection alive to prevent Render timeouts ---
+    async def keep_alive():
+        """Send heartbeat messages periodically to avoid idle disconnects."""
+        while True:
+            try:
+                await websocket.send_text(json.dumps({"type": "ping"}))
+                await asyncio.sleep(20)
+            except Exception:
+                break
+
+    asyncio.create_task(keep_alive())
+
     try:
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
             sender_id = msg.get("from")
 
-            # --- Handle Join Event ---
+            # --- ✅ Handle Join Event ---
             if msg.get("type") == "join":
                 client_id = sender_id
                 if room_name not in rooms:
                     rooms[room_name] = {}
                 rooms[room_name][client_id] = websocket
-                logging.info(f"Client {client_id} joined room {room_name}")
+                logging.info(f"👤 Client {client_id} joined room {room_name}")
 
-                # Notify others
+                # Notify other participants
                 for other_id, client_ws in rooms[room_name].items():
                     if other_id != client_id:
-                        await client_ws.send_text(data)
+                        try:
+                            await client_ws.send_text(data)
+                        except Exception as e:
+                            logging.warning(f"⚠️ Failed to send join to {other_id}: {e}")
                 continue
 
-            # --- Handle Direct Messages ---
+            # --- ✅ Handle Direct Messages ---
             recipient_id = msg.get("to")
             if recipient_id:
                 recipient_ws = rooms.get(room_name, {}).get(recipient_id)
                 if recipient_ws:
-                    await recipient_ws.send_text(data)
+                    try:
+                        await recipient_ws.send_text(data)
+                    except Exception as e:
+                        logging.warning(f"⚠️ Failed to send message to {recipient_id}: {e}")
             else:
-                # Broadcast (e.g., mute/unmute)
+                # --- ✅ Broadcast Events (e.g., mute/unmute, offers, etc.) ---
                 for other_id, client_ws in rooms.get(room_name, {}).items():
                     if other_id != sender_id:
-                        await client_ws.send_text(data)
+                        try:
+                            await client_ws.send_text(data)
+                        except Exception as e:
+                            logging.warning(f"⚠️ Broadcast send error to {other_id}: {e}")
 
     except WebSocketDisconnect:
-        logging.info(f"Client {client_id} disconnected from room {room_name}")
+        logging.info(f"🔴 Client {client_id} disconnected from room {room_name}")
         if room_name in rooms and client_id in rooms[room_name]:
             del rooms[room_name][client_id]
 
-            # Notify others
+            # Notify others that this user left
             for other_id, client_ws in rooms.get(room_name, {}).items():
-                await client_ws.send_text(json.dumps({
-                    "type": "user-left",
-                    "id": client_id
-                }))
+                try:
+                    await client_ws.send_text(json.dumps({
+                        "type": "user-left",
+                        "id": client_id
+                    }))
+                except Exception as e:
+                    logging.warning(f"⚠️ Failed to notify {other_id} about {client_id} leaving: {e}")
 
+            # Clean up empty rooms
+            if not rooms[room_name]:
+                del rooms[room_name]
+                logging.info(f"🧹 Room {room_name} deleted (no active participants)")
+
+    except Exception as e:
+        logging.error(f"❌ Unexpected error in WebSocket room {room_name}: {e}")
+        if client_id and room_name in rooms and client_id in rooms[room_name]:
+            del rooms[room_name][client_id]
             if not rooms[room_name]:
                 del rooms[room_name]

@@ -1,0 +1,5 @@
+services:
+  - type: web
+    name: ai-for-ia
+    env: python
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
