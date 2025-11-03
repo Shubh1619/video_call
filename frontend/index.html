@@ -5,7 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI for IA - Secure Video Conference</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
     <style>
+        /* --- 1. Root Variables & Reset --- */
         :root {
             --primary: #1a73e8;
             --primary-dark: #0d47a1;
@@ -14,11 +20,16 @@
             --warning: #f9ab00;
             --dark: #202124;
             --dark-light: #3c4043;
+            --dark-lighter: #2a2b2e;
             --gray: #5f6368;
             --light: #e8f0fe;
             --white: #ffffff;
-            --shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            --border-radius: 12px;
+            --text-primary: #e8eaed;
+            --text-secondary: #bdc1c6;
+            --shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            --border-radius-sm: 8px;
+            --border-radius-md: 12px;
+            --border-radius-lg: 16px;
             --transition: all 0.3s ease;
         }
 
@@ -29,9 +40,10 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            color: var(--white);
+            /* Use a cleaner, professional font */
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--dark);
+            color: var(--text-primary);
             margin: 0;
             height: 100vh;
             overflow: hidden;
@@ -43,28 +55,30 @@
             display: none !important; 
         }
 
-        /* Setup Screen */
+        /* --- 2. Setup Screen (Modernized) --- */
         #setup {
             flex: 1;
             display: flex;
             justify-content: center;
             align-items: center;
             padding: 20px;
+            /* Use a subtle gradient */
+            background: linear-gradient(135deg, var(--dark-light) 0%, var(--dark) 100%);
         }
 
         .setup-container {
-            background-color: rgba(255, 255, 255, 0.1);
+            background-color: var(--dark-lighter);
             backdrop-filter: blur(10px);
             padding: 40px;
-            border-radius: var(--border-radius);
+            border-radius: var(--border-radius-lg);
             box-shadow: var(--shadow);
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 24px;
             text-align: center;
             max-width: 450px;
             width: 100%;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .setup-header {
@@ -72,7 +86,7 @@
             align-items: center;
             justify-content: center;
             gap: 12px;
-            margin-bottom: 10px;
+            margin-bottom: 0;
         }
 
         .setup-header i {
@@ -81,8 +95,9 @@
         }
 
         .setup-header h2 {
-            font-size: 24px;
+            font-size: 26px;
             font-weight: 600;
+            color: var(--white);
         }
 
         .security-badge {
@@ -92,7 +107,10 @@
             gap: 8px;
             font-size: 14px;
             color: var(--secondary);
-            margin-bottom: 10px;
+            background: rgba(52, 168, 83, 0.1);
+            padding: 8px 12px;
+            border-radius: var(--border-radius-sm);
+            border: 1px solid rgba(52, 168, 83, 0.3);
         }
 
         .security-badge i {
@@ -102,10 +120,10 @@
         #setup input {
             width: 100%;
             padding: 14px 16px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            background-color: rgba(255, 255, 255, 0.1);
-            color: var(--white);
-            border-radius: 8px;
+            border: 1px solid var(--gray);
+            background-color: var(--dark-light);
+            color: var(--text-primary);
+            border-radius: var(--border-radius-sm);
             font-size: 16px;
             transition: var(--transition);
         }
@@ -113,19 +131,20 @@
         #setup input:focus {
             outline: none;
             border-color: var(--primary);
-            background-color: rgba(255, 255, 255, 0.15);
+            background-color: var(--dark-light);
+            box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.3);
         }
 
         #setup input::placeholder {
-            color: rgba(255, 255, 255, 0.7);
+            color: var(--text-secondary);
         }
 
         #joinBtn {
-            background: linear-gradient(to right, var(--primary), var(--primary-dark));
+            background: var(--primary);
             color: var(--white);
             border: none;
             padding: 14px 24px;
-            border-radius: 8px;
+            border-radius: var(--border-radius-sm);
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
@@ -139,31 +158,34 @@
 
         #joinBtn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 15px rgba(26, 115, 232, 0.4);
+            background: var(--primary-dark);
+            box-shadow: 0 6px 15px rgba(26, 115, 232, 0.2);
         }
-
-        /* Room Screen */
+        
+        /* --- 3. Main Room Screen --- */
         #room {
             flex: 1;
             display: flex;
             flex-direction: column;
             position: relative;
             background-color: var(--dark);
+            overflow: hidden; /* Hide overflow */
         }
 
         .room-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 20px;
-            background-color: rgba(0, 0, 0, 0.3);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 12px 24px;
+            background-color: var(--dark-lighter);
+            border-bottom: 1px solid var(--dark-light);
+            flex-shrink: 0;
         }
 
         .room-info {
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 20px;
         }
 
         .room-name {
@@ -171,6 +193,8 @@
             align-items: center;
             gap: 8px;
             font-weight: 500;
+            font-size: 18px;
+            color: var(--white);
         }
 
         .room-name i {
@@ -182,7 +206,7 @@
             align-items: center;
             gap: 6px;
             font-size: 14px;
-            color: rgba(255, 255, 255, 0.8);
+            color: var(--text-secondary);
         }
 
         .security-indicator {
@@ -192,57 +216,131 @@
             font-size: 14px;
             color: var(--secondary);
         }
+        
+        /* --- 4. Videos Container (NEW Grid & Pinning Layout) --- */
+        #main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            padding: 16px;
+            gap: 16px;
+        }
 
-        /* Videos Container */
+        /* Default Grid View */
         #videos {
             flex: 1;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            /* Responsive grid: 1 col on small, up to 5 on large */
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-auto-rows: min-content; /* Fit rows to content */
             gap: 16px;
-            padding: 16px;
             overflow-y: auto;
             align-items: start;
             justify-items: center;
         }
+        
+        /* Pinned View: Activated when a user is pinned */
+        #pinned-column {
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+            /* Smooth scrollbar */
+            scrollbar-width: thin;
+            scrollbar-color: var(--gray) var(--dark-light);
+        }
 
-        /* Screen sharing layout */
-        .screen-sharing-active #videos {
+        /* Main videos grid shrinks when pin is active */
+        #main-content.pin-active #videos {
+            flex: 3;
+            /* When pinned, we show ONE large video */
             grid-template-columns: 1fr;
-            grid-auto-flow: dense;
         }
-
-        .screen-sharing-active .screen-share-container {
-            grid-column: 1;
-            width: 100%;
-            height: 70vh;
-            max-height: 70vh;
-        }
-
-        .screen-sharing-active .participant-video {
-            max-width: 250px;
-            max-height: 180px;
-        }
-
-        .participants-row {
+        
+        /* Side column becomes visible */
+        #main-content.pin-active #pinned-column {
             display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            justify-content: center;
+            flex: 1;
+            min-width: 280px;
+            max-width: 320px;
+        }
+        
+        /* Tiles in the side column are smaller */
+        #main-content.pin-active #pinned-column .video-player-container {
+            max-height: 200px;
+        }
+        
+        /* --- 5. Screen Sharing Layout (NEW) --- */
+        
+        /* This new container holds participants when screen sharing */
+        #participants-strip {
+            display: none; /* Hidden by default */
             width: 100%;
-            margin-top: 12px;
+            background-color: var(--dark-lighter);
+            padding: 12px;
+            flex-shrink: 0;
+            overflow-x: auto;
+            gap: 12px;
+            /* Smooth scrollbar */
+            scrollbar-width: thin;
+            scrollbar-color: var(--gray) var(--dark);
+        }
+        
+        /* When local user shares screen... */
+        #room.local-screen-sharing {
+            /* Change main layout direction */
+            flex-direction: column;
         }
 
-        /* Video Player */
-        .video-player-container {
-            position: relative;
-            background-color: #000;
-            border-radius: var(--border-radius);
+        #room.local-screen-sharing #main-content {
+            /* Main content holds ONLY the screen share */
+            flex: 1;
+        }
+        
+        #room.local-screen-sharing #videos {
+            /* The main grid becomes the screen share container */
+            grid-template-columns: 1fr; /* Only one item */
             overflow: hidden;
-            box-shadow: var(--shadow);
-            transition: var(--transition);
+        }
+        
+        #room.local-screen-sharing #participants-strip {
+            display: flex; /* Show the bottom strip */
+        }
+        
+        /* The video tile containing the screen */
+        .video-player-container.screen-sharing-source {
             width: 100%;
             height: 100%;
-            max-height: 300px;
+            max-height: none;
+            border: none;
+            background-color: var(--dark);
+        }
+        
+        /* Other participants in the bottom strip */
+        #room.local-screen-sharing #participants-strip .video-player-container {
+            width: 220px;
+            height: 140px;
+            flex-shrink: 0;
+        }
+        
+        /* Hide controls on minimized videos */
+        #room.local-screen-sharing #participants-strip .pin-btn,
+        #room.local-screen-sharing #participants-strip .video-status-overlay {
+            display: none !important;
+        }
+
+        /* --- 6. Video Player Tile (NEW) --- */
+        .video-player-container {
+            position: relative;
+            background-color: var(--dark-light);
+            border-radius: var(--border-radius-md);
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            transition: var(--transition);
+            width: 100%;
+            aspect-ratio: 16 / 9; /* Enforce 16:9 ratio */
+            max-height: 450px;
+            border: 2px solid transparent;
         }
 
         .video-player-container video {
@@ -251,10 +349,95 @@
             object-fit: cover;
         }
 
+        /* Highlight for local user */
         #localVideoContainer {
             border: 2px solid var(--primary);
         }
+        
+        /* Speaking highlight (brighter) */
+        .video-player-container.speaking {
+            border-color: var(--secondary);
+            box-shadow: 0 0 15px rgba(52, 168, 83, 0.5);
+        }
 
+        /* --- Status Overlays (NEW) --- */
+        .video-status-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.45);
+            display: none; /* Hidden by default */
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            color: var(--white);
+            backdrop-filter: blur(4px);
+            z-index: 5;
+        }
+
+        /* Show overlay when class is added */
+        .video-player-container.audio-muted .mic-off-overlay {
+            display: flex;
+        }
+        .video-player-container.video-off .cam-off-overlay {
+            display: flex;
+        }
+        /* When both are off, stack them */
+        .video-player-container.audio-muted.video-off .video-status-overlay {
+            font-size: 28px;
+        }
+        .video-player-container.audio-muted.video-off .mic-off-overlay {
+            top: -30px;
+        }
+        .video-player-container.audio-muted.video-off .cam-off-overlay {
+            bottom: -30px;
+        }
+
+
+        /* --- Pin Button (NEW) --- */
+        .pin-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.4);
+            color: var(--white);
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 14px;
+            opacity: 0; /* Hidden by default */
+            transform: scale(0.8);
+        }
+        
+        .video-player-container:hover .pin-btn {
+            opacity: 1;
+            transform: scale(1);
+        }
+        
+        .pin-btn:hover {
+            background: var(--primary);
+        }
+        
+        /* Pinned state */
+        .video-player-container.pinned .pin-btn {
+            background: var(--primary);
+            color: var(--white);
+            opacity: 1;
+            transform: scale(1);
+        }
+        
+        /* Hide pin button when screen sharing */
+        .video-player-container.screen-sharing-source .pin-btn {
+            display: none;
+        }
+
+        /* --- Video Overlay (Bottom bar) --- */
         .video-overlay {
             position: absolute;
             bottom: 0;
@@ -265,6 +448,7 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
+            z-index: 2;
         }
 
         .participant-name {
@@ -297,39 +481,31 @@
             justify-content: center;
             font-size: 12px;
         }
+        .status-icon.muted { background-color: var(--danger); }
+        .status-icon.camera-off { background-color: var(--gray); }
+        /* Hide old camera icon, we use overlay now */
+        .status-icon.camera-off { display: none; }
 
-        .status-icon.muted {
-            background-color: var(--danger);
-        }
 
-        .status-icon.camera-off {
-            background-color: var(--gray);
-        }
-
-        /* Speaking highlight */
-        .video-player-container.speaking {
-            box-shadow: 0 0 0 3px var(--secondary);
-        }
-
-        /* Controls */
+        /* --- 7. Controls Bar --- */
         #controls {
-            background-color: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(10px);
-            padding: 16px;
+            background-color: var(--dark-lighter);
+            padding: 16px 24px;
             display: flex;
             justify-content: center;
             gap: 16px;
             flex-shrink: 0;
             z-index: 20;
+            border-top: 1px solid var(--dark-light);
         }
 
         .control-btn {
-            background-color: rgba(255, 255, 255, 0.1);
+            background-color: var(--dark-light);
             border: none;
-            color: white;
-            width: 70px;
-            height: 70px;
-            border-radius: 50%;
+            color: var(--text-primary);
+            width: 64px;
+            height: 56px;
+            border-radius: var(--border-radius-md);
             cursor: pointer;
             display: flex;
             flex-direction: column;
@@ -337,6 +513,7 @@
             justify-content: center;
             gap: 6px;
             font-size: 12px;
+            font-weight: 500;
             transition: var(--transition);
         }
 
@@ -345,50 +522,105 @@
         }
 
         .control-btn:hover {
-            background-color: rgba(255, 255, 255, 0.2);
+            background-color: var(--gray);
             transform: translateY(-2px);
         }
 
         .control-btn.toggled {
             background-color: var(--primary);
+            color: var(--white);
+        }
+        
+        .control-btn.toggled:hover {
+             background-color: var(--primary-dark);
         }
 
         .control-btn.end-call {
             background-color: var(--danger);
+            color: var(--white);
         }
 
         .control-btn.end-call:hover {
             background-color: #c5221f;
         }
 
-        /* Responsive Design */
+        /* --- 8. Responsive Design --- */
+        
+        /* Scrollbar styling */
+        #videos::-webkit-scrollbar,
+        #pinned-column::-webkit-scrollbar {
+            width: 8px;
+        }
+        #videos::-webkit-scrollbar-track,
+        #pinned-column::-webkit-scrollbar-track {
+            background: var(--dark-light);
+            border-radius: 4px;
+        }
+        #videos::-webkit-scrollbar-thumb,
+        #pinned-column::-webkit-scrollbar-thumb {
+            background: var(--gray);
+            border-radius: 4px;
+        }
+        #videos::-webkit-scrollbar-thumb:hover,
+        #pinned-column::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        #participants-strip::-webkit-scrollbar {
+            height: 8px;
+        }
+        #participants-strip::-webkit-scrollbar-track {
+            background: var(--dark);
+        }
+        #participants-strip::-webkit-scrollbar-thumb {
+            background: var(--gray);
+            border-radius: 4px;
+        }
+
+
+        @media (max-width: 900px) {
+            /* On medium screens, pin column is on top/bottom */
+            #main-content.pin-active {
+                flex-direction: column;
+            }
+            #main-content.pin-active #videos {
+                flex: 3;
+            }
+            #main-content.pin-active #pinned-column {
+                flex: 1;
+                flex-direction: row; /* Horizontal row */
+                overflow-x: auto; /* Horizontal scroll */
+                overflow-y: hidden;
+                min-width: 100%;
+                max-width: 100%;
+                max-height: 150px;
+            }
+            #main-content.pin-active #pinned-column .video-player-container {
+                width: 200px;
+                height: 120px;
+                flex-shrink: 0;
+            }
+        }
+        
         @media (max-width: 768px) {
             .setup-container {
                 padding: 30px 20px;
             }
             
-            #videos {
-                grid-template-columns: 1fr;
+            #main-content {
                 padding: 10px;
                 gap: 10px;
             }
             
-            .video-player-container {
-                max-height: 250px;
-            }
-            
-            .screen-sharing-active .screen-share-container {
-                height: 50vh;
-            }
-            
-            .screen-sharing-active .participant-video {
-                max-width: 180px;
-                max-height: 130px;
+            #videos {
+                grid-template-columns: 1fr;
+                padding: 0;
+                gap: 10px;
             }
             
             .control-btn {
                 width: 60px;
-                height: 60px;
+                height: 54px;
             }
             
             .room-header {
@@ -405,63 +637,30 @@
         }
 
         @media (max-width: 480px) {
-            .setup-container {
-                padding: 25px 15px;
-            }
-            
             #controls {
                 gap: 10px;
                 padding: 12px;
+                /* Allow horizontal scrolling for controls on tiny screens */
+                justify-content: flex-start;
+                overflow-x: auto;
             }
             
             .control-btn {
                 width: 55px;
                 height: 55px;
                 font-size: 11px;
-            }
-            
-            .control-btn i {
-                font-size: 18px;
-            }
-            
-            .video-overlay {
-                padding: 8px;
-            }
-            
-            .participant-name {
-                font-size: 12px;
-            }
-            
-            .status-icon {
-                width: 24px;
-                height: 24px;
-                font-size: 10px;
+                flex-shrink: 0; /* Prevent controls from shrinking */
             }
         }
 
-        /* Animation for joining */
+        /* --- 9. Animations --- */
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
         }
 
         .video-player-container {
-            animation: fadeIn 0.5s ease;
-        }
-
-        /* Scrollbar styling */
-        #videos::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        #videos::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 4px;
-        }
-
-        #videos::-webkit-scrollbar-thumb {
-            background: var(--primary);
-            border-radius: 4px;
+            animation: fadeIn 0.4s ease;
         }
     </style>
 </head>
@@ -504,7 +703,12 @@
             </div>
         </div>
         
-        <div id="videos"></div>
+        <div id="main-content">
+            <div id="videos"></div>
+            <div id="pinned-column"></div>
+        </div>
+        
+        <div id="participants-strip"></div>
         
         <div id="controls">
             <button id="muteBtn" class="control-btn">
@@ -533,7 +737,13 @@
     const roomInput = document.getElementById("roomInput");
     const nameInput = document.getElementById("nameInput");
     const joinBtn = document.getElementById("joinBtn");
+    
+    // NEW: Main content containers
+    const mainContentDiv = document.getElementById("main-content");
     const videosDiv = document.getElementById("videos");
+    const pinnedColumnDiv = document.getElementById("pinned-column");
+    const participantsStripDiv = document.getElementById("participants-strip");
+    
     const muteBtn = document.getElementById("muteBtn");
     const cameraBtn = document.getElementById("cameraBtn");
     const shareScreenBtn = document.getElementById("shareScreenBtn");
@@ -548,6 +758,9 @@
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const SPEAKING_THRESHOLD = 5;
     let isScreenSharing = false;
+    
+    // NEW: Pinning state
+    let pinnedParticipantId = null;
 
     // --- Helper: Get room ID from URL ---
     function getRoomIdFromURL() {
@@ -576,18 +789,16 @@
         requestAnimationFrame(checkVolume);
     }
 
-    // --- Video Element Builder ---
-    function createVideoPlayer(id, name, stream, isMuted = false, audioEnabled = true, isScreenShare = false, isLocal = false) {
+    // --- Video Element Builder (MODIFIED) ---
+    function createVideoPlayer(id, name, stream, isMuted = false, audioEnabled = true, videoEnabled = true, isLocal = false) {
         const container = document.createElement("div");
         container.id = id;
         container.className = "video-player-container";
         
-        if (isScreenShare) {
-            container.classList.add("screen-share-container");
-        } else if (isScreenSharing && !isLocal) {
-            container.classList.add("participant-video");
-        }
-        
+        // Add status classes
+        if (!audioEnabled) container.classList.add('audio-muted');
+        if (!videoEnabled) container.classList.add('video-off');
+
         const video = document.createElement("video");
         video.autoplay = true;
         video.playsInline = true;
@@ -604,49 +815,159 @@
             nameTag.textContent = `${name} `;
         }
         
+        // Bottom-right status icons
         const statusIndicators = document.createElement("div");
         statusIndicators.className = "status-indicators";
-        
         const micIcon = document.createElement("div");
         micIcon.className = `status-icon ${!audioEnabled ? 'muted' : ''}`;
         micIcon.innerHTML = `<i class="fas ${audioEnabled ? 'fa-microphone' : 'fa-microphone-slash'}"></i>`;
         
-        const cameraIcon = document.createElement("div");
-        cameraIcon.className = `status-icon camera-off`;
-        cameraIcon.innerHTML = `<i class="fas fa-video"></i>`;
-        cameraIcon.style.display = 'none';
+        // NEW: Center overlays
+        const micOffOverlay = document.createElement("div");
+        micOffOverlay.className = "video-status-overlay mic-off-overlay";
+        micOffOverlay.innerHTML = `<i class="fas fa-microphone-slash"></i>`;
         
+        const camOffOverlay = document.createElement("div");
+        camOffOverlay.className = "video-status-overlay cam-off-overlay";
+        camOffOverlay.innerHTML = `<i class="fas fa-video-slash"></i>`;
+        
+        // NEW: Pin button
+        const pinBtn = document.createElement("button");
+        pinBtn.className = "pin-btn";
+        pinBtn.innerHTML = `<i class="fas fa-thumbtack"></i>`;
+        pinBtn.onclick = () => togglePin(id);
+
         statusIndicators.appendChild(micIcon);
-        statusIndicators.appendChild(cameraIcon);
-        
         overlay.appendChild(nameTag);
         overlay.appendChild(statusIndicators);
         
         container.appendChild(video);
         container.appendChild(overlay);
+        container.appendChild(micOffOverlay);
+        container.appendChild(camOffOverlay);
+        container.appendChild(pinBtn);
         
+        // Add to the main grid by default
         videosDiv.appendChild(container);
+        
         updateParticipantCount();
-        return { container, micIcon, cameraIcon };
+        return container;
     }
 
     // --- Helper: Update participant count ---
     function updateParticipantCount() {
+        // Count all containers in all locations
         const count = document.querySelectorAll('.video-player-container').length;
         participantCount.textContent = `${count} participant${count !== 1 ? 's' : ''}`;
     }
+    
+    // --- NEW: Pin/Unpin Logic ---
+    function togglePin(id) {
+        const container = document.getElementById(id);
+        if (!container) return;
+
+        if (pinnedParticipantId === id) {
+            // Unpin
+            pinnedParticipantId = null;
+            container.classList.remove('pinned');
+            mainContentDiv.classList.remove('pin-active');
+            
+            // Move everyone from pinned-column back to videosDiv
+            Array.from(pinnedColumnDiv.children).forEach(child => videosDiv.appendChild(child));
+            
+        } else {
+            // Pin
+            const oldPinnedId = pinnedParticipantId;
+            pinnedParticipantId = id;
+
+            // Remove old pin class
+            if (oldPinnedId) {
+                document.getElementById(oldPinnedId)?.classList.remove('pinned');
+            }
+            
+            // Add new pin class
+            container.classList.add('pinned');
+            mainContentDiv.classList.add('pin-active');
+            
+            // Move the pinned video to the main #videos grid
+            videosDiv.appendChild(container);
+
+            // Move all *other* videos to the pinned column
+            Array.from(videosDiv.children).forEach(child => {
+                if (child.id !== id) {
+                    pinnedColumnDiv.appendChild(child);
+                }
+            });
+            
+            // Move local video to pinned column if it's not the one being pinned
+            const localContainer = document.getElementById('localVideoContainer');
+            if (localContainer && localContainer.id !== id) {
+                pinnedColumnDiv.appendChild(localContainer);
+            }
+        }
+        updateParticipantCount(); // Recalculate layout
+    }
+    
+    // --- NEW: Screen Share Layout Manager ---
+    function manageScreenShareLayout(isSharing) {
+        if (isSharing) {
+            isScreenSharing = true;
+            roomDiv.classList.add('local-screen-sharing');
+            const localContainer = document.getElementById('localVideoContainer');
+            localContainer.classList.add('screen-sharing-source');
+            
+            // Move local container (screen) to main grid
+            videosDiv.appendChild(localContainer);
+            
+            // Move all *other* videos to the participants strip
+            Array.from(videosDiv.children).forEach(child => {
+                if (child.id !== 'localVideoContainer') {
+                    participantsStripDiv.appendChild(child);
+                }
+            });
+            // Also move from pinned column
+            Array.from(pinnedColumnDiv.children).forEach(child => {
+                if (child.id !== 'localVideoContainer') {
+                    participantsStripDiv.appendChild(child);
+                }
+            });
+            
+        } else {
+            isScreenSharing = false;
+            roomDiv.classList.remove('local-screen-sharing');
+            const localContainer = document.getElementById('localVideoContainer');
+            localContainer.classList.remove('screen-sharing-source');
+            
+            // Move all participants from strip back to main grid
+            Array.from(participantsStripDiv.children).forEach(child => videosDiv.appendChild(child));
+            
+            // Re-apply pin if it was active
+            if (pinnedParticipantId) {
+                togglePin(pinnedParticipantId); // This will re-run the pin logic
+            }
+        }
+    }
+
 
     // --- Helper: Set Local Stream ---
     function setLocalStream(stream) {
         localStream = stream;
         let localVideo = document.getElementById("localVideoContainer");
+        
+        const audioEnabled = stream.getAudioTracks()[0]?.enabled ?? true;
+        const videoEnabled = stream.getVideoTracks()[0]?.enabled ?? true;
+
         if (!localVideo) {
-            const audioEnabled = stream.getAudioTracks()[0]?.enabled ?? true;
-            createVideoPlayer("localVideoContainer", myName, stream, true, audioEnabled, false, true);
+            localVideo = createVideoPlayer("localVideoContainer", myName, stream, true, audioEnabled, videoEnabled, true);
         } else {
             localVideo.querySelector("video").srcObject = stream;
         }
+        
+        // Update local UI
+        localVideo.classList.toggle('audio-muted', !audioEnabled);
+        localVideo.classList.toggle('video-off', !videoEnabled);
 
+        // Update all peer connections
         for (const id in pcs) {
             const pc = pcs[id];
             stream.getTracks().forEach(track => {
@@ -656,8 +977,8 @@
         }
     }
 
-    // --- Helper: Create Peer Connection ---
-    function createPeerConnection(remoteId, remoteName, initialAudioState) {
+    // --- Helper: Create Peer Connection (MODIFIED) ---
+    function createPeerConnection(remoteId, remoteName, initialAudioState, initialVideoState) {
         const pc = new RTCPeerConnection({ 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -672,7 +993,8 @@
             const containerId = `remoteContainer-${remoteId}`;
             let remoteContainer = document.getElementById(containerId);
             if (!remoteContainer) {
-                createVideoPlayer(containerId, remoteName, stream, false, initialAudioState);
+                // Pass initial states to createVideoPlayer
+                createVideoPlayer(containerId, remoteName, stream, false, initialAudioState, initialVideoState, false);
             } else {
                 remoteContainer.querySelector("video").srcObject = stream;
             }
@@ -693,7 +1015,7 @@
         return pc;
     }
 
-    // --- NEW: Connect WebSocket (with auto reconnect + ping handling) ---
+    // --- WebSocket (MODIFIED) ---
     function connectWebSocket(room) {
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${location.host}/ws/${room}`;
@@ -703,11 +1025,13 @@
 
         ws.onopen = () => {
             console.log("✅ WebSocket connected successfully");
+            // Send both audio and video state on join
             ws.send(JSON.stringify({
                 type: "join",
                 from: myId,
                 name: myName,
-                audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true
+                audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true,
+                videoEnabled: localStream.getVideoTracks()[0]?.enabled ?? true
             }));
         };
 
@@ -720,31 +1044,36 @@
 
             let pc = pcs[msg.from];
             if (!pc && (msg.type === "offer" || msg.type === "join")) {
-                pc = createPeerConnection(msg.from, msg.name, msg.audioEnabled);
+                // Create PC with initial audio/video state
+                pc = createPeerConnection(msg.from, msg.name, msg.audioEnabled, msg.videoEnabled);
             }
 
             switch (msg.type) {
                 case "join":
                     const offer = await pc.createOffer();
                     await pc.setLocalDescription(offer);
+                    // Send our state
                     ws.send(JSON.stringify({
                         ...pc.localDescription.toJSON(),
                         from: myId,
                         to: msg.from,
                         name: myName,
-                        audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true
+                        audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true,
+                        videoEnabled: localStream.getVideoTracks()[0]?.enabled ?? true
                     }));
                     break;
                 case "offer":
                     await pc.setRemoteDescription(new RTCSessionDescription(msg));
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
+                    // Send our state
                     ws.send(JSON.stringify({
                         ...pc.localDescription.toJSON(),
                         from: myId,
                         to: msg.from,
                         name: myName,
-                        audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true
+                        audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? true,
+                        videoEnabled: localStream.getVideoTracks()[0]?.enabled ?? true
                     }));
                     break;
                 case "answer":
@@ -753,18 +1082,33 @@
                 case "candidate":
                     if (pc) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
                     break;
+                // MODIFIED: Update both overlay and small icon
                 case "audio-toggle":
-                    const container = document.getElementById(`remoteContainer-${msg.from}`);
-                    if (container) {
-                        const micIcon = container.querySelector(".status-icon");
+                    const aContainer = document.getElementById(`remoteContainer-${msg.from}`);
+                    if (aContainer) {
+                        // Update overlay
+                        aContainer.classList.toggle("audio-muted", !msg.enabled);
+                        // Update bottom-right icon
+                        const micIcon = aContainer.querySelector(".status-icon");
                         micIcon.classList.toggle("muted", !msg.enabled);
                         micIcon.querySelector("i").className = `fas ${msg.enabled ? 'fa-microphone' : 'fa-microphone-slash'}`;
+                    }
+                    break;
+                // NEW: Handle video toggle
+                case "video-toggle":
+                    const vContainer = document.getElementById(`remoteContainer-${msg.from}`);
+                    if (vContainer) {
+                        vContainer.classList.toggle("video-off", !msg.enabled);
                     }
                     break;
                 case "user-left":
                     if (pcs[msg.id]) {
                         pcs[msg.id].close();
                         delete pcs[msg.id];
+                        // If pinned user leaves, unpin
+                        if(pinnedParticipantId === `remoteContainer-${msg.id}`) {
+                            togglePin(pinnedParticipantId); // This will unpin
+                        }
                         document.getElementById(`remoteContainer-${msg.id}`)?.remove();
                         updateParticipantCount();
                     }
@@ -772,10 +1116,7 @@
             }
         };
 
-        ws.onerror = (err) => {
-            console.error("❌ WebSocket error:", err);
-        };
-
+        ws.onerror = (err) => { console.error("❌ WebSocket error:", err); };
         ws.onclose = (e) => {
             console.warn("⚠️ WebSocket closed:", e.reason || "no reason");
             setTimeout(() => {
@@ -802,17 +1143,17 @@
             const savedCam = sessionStorage.getItem('cameraOff') === 'true';
             
             if (stream.getAudioTracks()[0] && savedMic) stream.getAudioTracks()[0].enabled = false;
-            if (stream.getVideoTracks()[0] && savedCam) stream.getVideoTracks()[0].enabled = false;
+            if (stream.getVideoTracks()[0] && savedCam) stream.getAudioTracks()[0].enabled = false;
             
             setLocalStream(cameraStream);
             monitorAudioLevel(cameraStream, "localVideoContainer");
             updateControlButtons();
         } catch (e) {
             console.error("Media error", e);
+            alert("Could not access camera and microphone. Please check permissions.");
             return;
         }
 
-        // ✅ Use new WebSocket connection logic
         connectWebSocket(room);
     }
 
@@ -834,7 +1175,7 @@
         }
     }
 
-    // --- UI Button Handlers ---
+    // --- UI Button Handlers (MODIFIED) ---
     const roomFromUrl = getRoomIdFromURL();
     roomInput.value = roomFromUrl;
     joinBtn.onclick = () => joinCall(roomInput.value.trim() || "default-room", nameInput.value.trim() || "Guest");
@@ -844,9 +1185,15 @@
         if (track) {
             track.enabled = !track.enabled;
             sessionStorage.setItem('micMuted', !track.enabled);
-            muteBtn.classList.toggle("toggled", !track.enabled);
-            muteBtn.querySelector("i").className = `fas ${track.enabled ? 'fa-microphone' : 'fa-microphone-slash'}`;
-            muteBtn.querySelector("span").textContent = track.enabled ? 'Mute' : 'Unmute';
+            updateControlButtons();
+            
+            // NEW: Update local UI overlay
+            document.getElementById('localVideoContainer').classList.toggle('audio-muted', !track.enabled);
+            
+            // NEW: Send to others
+            if(ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "audio-toggle", enabled: track.enabled, from: myId }));
+            }
         }
     };
 
@@ -855,30 +1202,46 @@
         if (track) {
             track.enabled = !track.enabled;
             sessionStorage.setItem('cameraOff', !track.enabled);
-            cameraBtn.classList.toggle("toggled", !track.enabled);
-            cameraBtn.querySelector("i").className = track.enabled ? 'fas fa-video' : 'fas fa-video-slash';
-            cameraBtn.querySelector("span").textContent = track.enabled ? 'Camera Off' : 'Camera On';
+            updateControlButtons();
+            
+            // NEW: Update local UI overlay
+            document.getElementById('localVideoContainer').classList.toggle('video-off', !track.enabled);
+            
+            // NEW: Send to others
+            if(ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "video-toggle", enabled: track.enabled, from: myId }));
+            }
         }
     };
 
     shareScreenBtn.onclick = async () => {
+        // If already sharing, stop
+        if (isScreenSharing) {
+            manageScreenShareLayout(false);
+            setLocalStream(cameraStream); // Revert to camera
+            monitorAudioLevel(cameraStream, "localVideoContainer");
+            return;
+        }
+        
+        // Start new share
         try {
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-            isScreenSharing = true;
-            roomDiv.classList.add('screen-sharing-active');
-            document.querySelectorAll('.video-player-container:not(#localVideoContainer)').forEach(c => c.classList.add('participant-video'));
+            
+            // Use new layout manager
+            manageScreenShareLayout(true);
+            
             setLocalStream(screenStream);
             monitorAudioLevel(screenStream, "localVideoContainer");
+            
+            // Handle "Stop Sharing" button in browser
             screenStream.getVideoTracks()[0].onended = () => {
-                isScreenSharing = false;
-                roomDiv.classList.remove('screen-sharing-active');
-                document.querySelectorAll('.participant-video').forEach(c => c.classList.remove('participant-video'));
+                manageScreenShareLayout(false);
                 setLocalStream(cameraStream);
                 monitorAudioLevel(cameraStream, "localVideoContainer");
             };
         } catch (e) {
-            isScreenSharing = false;
-            roomDiv.classList.remove('screen-sharing-active');
+            console.error("Screen share error:", e);
+            manageScreenShareLayout(false); // Revert UI
             setLocalStream(cameraStream);
             monitorAudioLevel(cameraStream, "localVideoContainer");
         }
@@ -889,14 +1252,25 @@
         Object.values(pcs).forEach(pc => pc.close());
         if (ws) ws.close();
         if (localStream) localStream.getTracks().forEach(track => track.stop());
-        if (audioContext) audioContext.close().then(() => window.location.reload());
-        else window.location.reload();
+        if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+        
+        if (audioContext && audioContext.state !== 'closed') {
+            audioContext.close().then(() => window.location.reload());
+        } else {
+            window.location.reload();
+        }
     };
 
     window.addEventListener('load', () => {
         const savedRoom = sessionStorage.getItem('room');
         const savedName = sessionStorage.getItem('name');
-        if (savedRoom && savedName) joinCall(savedRoom, savedName);
+        if (savedRoom && savedName) {
+            // Pre-fill fields for re-join
+            roomInput.value = savedRoom;
+            nameInput.value = savedName;
+            // Automatically join
+            joinCall(savedRoom, savedName);
+        }
     });
 </script>
 

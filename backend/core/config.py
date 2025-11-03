@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MY_DOMAIN="https://video-call-92hl.onrender.com"
+MY_DOMAIN="https://ai-meeting-assistant-zigx.onrender.com"
 # MY_DOMAIN="http://127.0.0.1:10000"
 
 
