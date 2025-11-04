@@ -1,6 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from backend.email.utils import send_meeting_reminder
-from backend.core.db import SessionLocal
+from backend.email.db import SessionLocal
 from backend.models.meeting import Meeting
 import datetime
 import asyncio

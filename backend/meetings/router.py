@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Dict 
 
 # --- Local Imports ---
-from backend.core.db import get_db
+from backend.email.db import get_db
 from backend.auth.utils import get_current_user
 from backend.models.meeting import Meeting
 from backend.scheduler.reminder import schedule_reminder
