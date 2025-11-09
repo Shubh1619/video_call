@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI for IA - Secure Video Conference</title>
+    <title>AI for IA - Video Conference</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -551,6 +551,27 @@
         .control-btn.end-call:hover {
             background-color: #c5221f;
         }
+        
+        /* Recording indicator */
+        .recording-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background-color: rgba(234, 67, 53, 0.2);
+            border: 1px solid rgba(234, 67, 53, 0.5);
+            border-radius: var(--border-radius-sm);
+            color: var(--danger);
+            font-size: 14px;
+            font-weight: 500;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
 
         /* --- 8. Chat Sidebar --- */
         #chat-sidebar {
@@ -688,7 +709,149 @@
             background-color: var(--primary-dark);
         }
 
-        /* --- 9. Responsive Design --- */
+        /* --- 9. Recording Modal --- */
+        #recording-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background-color: var(--dark-lighter);
+            border-radius: var(--border-radius-lg);
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--white);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 20px;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .close-modal:hover {
+            color: var(--white);
+        }
+
+        .modal-body {
+            margin-bottom: 25px;
+        }
+
+        .modal-body p {
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin-bottom: 15px;
+        }
+
+        .recording-options {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .recording-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 15px;
+            background-color: var(--dark-light);
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            transition: var(--transition);
+            border: 1px solid transparent;
+        }
+
+        .recording-option:hover {
+            background-color: rgba(26, 115, 232, 0.1);
+            border-color: var(--primary);
+        }
+
+        .recording-option i {
+            font-size: 20px;
+            color: var(--primary);
+            width: 24px;
+        }
+
+        .option-info {
+            flex: 1;
+        }
+
+        .option-title {
+            font-weight: 500;
+            color: var(--white);
+            margin-bottom: 4px;
+        }
+
+        .option-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border-radius: var(--border-radius-sm);
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            border: none;
+        }
+
+        .modal-btn.secondary {
+            background-color: var(--dark-light);
+            color: var(--text-primary);
+        }
+
+        .modal-btn.secondary:hover {
+            background-color: var(--gray);
+        }
+
+        .modal-btn.primary {
+            background-color: var(--primary);
+            color: var(--white);
+        }
+
+        .modal-btn.primary:hover {
+            background-color: var(--primary-dark);
+        }
+
+        /* --- 10. Responsive Design --- */
         
         /* Scrollbar styling */
         #videos::-webkit-scrollbar,
@@ -803,9 +966,21 @@
                 font-size: 11px;
                 flex-shrink: 0;
             }
+            
+            .modal-content {
+                padding: 20px;
+            }
+            
+            .recording-options {
+                gap: 8px;
+            }
+            
+            .recording-option {
+                padding: 10px;
+            }
         }
 
-        /* --- 10. Animations --- */
+        /* --- 11. Animations --- */
         @keyframes fadeIn {
             from { opacity: 0; transform: scale(0.95); }
             to { opacity: 1; transform: scale(1); }
@@ -828,11 +1003,10 @@
                 <i class="fas fa-shield-alt"></i>
                 <span>End-to-End Encrypted</span>
             </div>
-            <input type="text" id="roomInput" placeholder="Enter Room Name" />
             <input type="text" id="nameInput" placeholder="Enter Your Name" value="Guest" />
             <button id="joinBtn">
                 <i class="fas fa-sign-in-alt"></i>
-                <span>Join Secure Meeting</span>
+                <span>Join Meeting</span>
             </button>
         </div>
     </div>
@@ -847,6 +1021,10 @@
                 <div class="participant-count">
                     <i class="fas fa-users"></i>
                     <span id="participantCount">1 participant</span>
+                </div>
+                <div id="recordingIndicator" class="recording-indicator hidden">
+                    <i class="fas fa-circle"></i>
+                    <span>Recording</span>
                 </div>
             </div>
             <div class="security-indicator">
@@ -874,6 +1052,10 @@
             <button id="shareScreenBtn" class="control-btn">
                 <i class="fas fa-desktop"></i>
                 <span>Share</span>
+            </button>
+            <button id="recordBtn" class="control-btn">
+                <i class="fas fa-record-vinyl"></i>
+                <span>Record</span>
             </button>
             <button id="captionsBtn" class="control-btn">
                 <i class="fas fa-closed-captioning"></i>
@@ -908,12 +1090,53 @@
             </form>
         </div>
     </div>
+    
+    <!-- Recording Modal -->
+    <div id="recording-modal" class="hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-record-vinyl"></i> Start Recording</h3>
+                <button class="close-modal" id="closeRecordingModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Choose what you would like to record:</p>
+                <div class="recording-options">
+                    <div class="recording-option" data-type="screen">
+                        <i class="fas fa-desktop"></i>
+                        <div class="option-info">
+                            <div class="option-title">Screen Only</div>
+                            <div class="option-desc">Record your screen and audio</div>
+                        </div>
+                    </div>
+                    <div class="recording-option" data-type="camera">
+                        <i class="fas fa-video"></i>
+                        <div class="option-info">
+                            <div class="option-title">Camera Only</div>
+                            <div class="option-desc">Record your camera and audio</div>
+                        </div>
+                    </div>
+                    <div class="recording-option" data-type="both">
+                        <i class="fas fa-layer-group"></i>
+                        <div class="option-info">
+                            <div class="option-title">Screen and Camera</div>
+                            <div class="option-desc">Record both your screen and camera with picture-in-picture</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary" id="cancelRecording">Cancel</button>
+                <button class="modal-btn primary" id="startRecording">Start Recording</button>
+            </div>
+        </div>
+    </div>
 
 <script>
     // --- DOM Elements ---
     const setupDiv = document.getElementById("setup");
     const roomDiv = document.getElementById("room");
-    const roomInput = document.getElementById("roomInput");
     const nameInput = document.getElementById("nameInput");
     const joinBtn = document.getElementById("joinBtn");
     
@@ -927,11 +1150,13 @@
     const muteBtn = document.getElementById("muteBtn");
     const cameraBtn = document.getElementById("cameraBtn");
     const shareScreenBtn = document.getElementById("shareScreenBtn");
+    const recordBtn = document.getElementById("recordBtn");
     const captionsBtn = document.getElementById("captionsBtn");
     const chatBtn = document.getElementById("chatBtn");
     const endBtn = document.getElementById("endBtn");
     const currentRoomName = document.getElementById("currentRoomName");
     const participantCount = document.getElementById("participantCount");
+    const recordingIndicator = document.getElementById("recordingIndicator");
     
     // Chat elements
     const chatSidebar = document.getElementById("chat-sidebar");
@@ -939,6 +1164,13 @@
     const chatMessages = document.getElementById("chat-messages");
     const chatInputForm = document.getElementById("chat-input-form");
     const chatInput = document.getElementById("chat-input");
+    
+    // Recording elements
+    const recordingModal = document.getElementById("recording-modal");
+    const closeRecordingModal = document.getElementById("closeRecordingModal");
+    const cancelRecordingBtn = document.getElementById("cancelRecording");
+    const startRecordingBtn = document.getElementById("startRecording");
+    const recordingOptions = document.querySelectorAll(".recording-option");
 
     // --- WebRTC ---
     let ws, localStream, cameraStream, pcs = {};
@@ -956,6 +1188,14 @@
     let sttWebSocket = null;
     let activeSpeakerId = null;
     let captionInterval = null;
+    
+    // Recording state
+    let isRecording = false;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let selectedRecordingType = "screen";
+    let recordingStartTime = null;
+    let recordingTimerInterval = null;
 
     // --- Helper: Get room ID from URL ---
     function getRoomIdFromURL() {
@@ -1159,6 +1399,171 @@
         }
     }
 
+    // --- Recording System ---
+    function showRecordingModal() {
+        recordingModal.classList.remove('hidden');
+        selectedRecordingType = "screen"; // Default selection
+        
+        // Reset selection
+        recordingOptions.forEach(option => {
+            option.classList.remove('selected');
+            if (option.dataset.type === selectedRecordingType) {
+                option.classList.add('selected');
+            }
+        });
+    }
+
+    function hideRecordingModal() {
+        recordingModal.classList.add('hidden');
+    }
+
+    function selectRecordingOption(type) {
+        selectedRecordingType = type;
+        
+        // Update UI
+        recordingOptions.forEach(option => {
+            option.classList.remove('selected');
+            if (option.dataset.type === type) {
+                option.classList.add('selected');
+            }
+        });
+    }
+
+    async function startRecording() {
+        try {
+            hideRecordingModal();
+            
+            let stream;
+            
+            // For screen recording, we'll use the current camera stream instead of screen share
+            // This avoids the browser's screen share selection dialog
+            switch(selectedRecordingType) {
+                case "screen":
+                    // Use camera stream for recording instead of screen share
+                    stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: true 
+                    });
+                    break;
+                    
+                case "camera":
+                    stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: true 
+                    });
+                    break;
+                    
+                case "both":
+                    // For both, we'll just use camera stream to avoid screen share dialog
+                    stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: true 
+                    });
+                    break;
+            }
+            
+            if (!stream) {
+                throw new Error("Failed to get recording stream");
+            }
+            
+            // Set up media recorder
+            recordedChunks = [];
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'video/webm;codecs=vp9,opus'
+            });
+            
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+            
+            mediaRecorder.onstop = () => {
+                // Create a blob from the recorded chunks
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                
+                // Create download link
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `meeting-recording-${new Date().toISOString().slice(0, 19)}.webm`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                // Stop all tracks
+                stream.getTracks().forEach(track => track.stop());
+            };
+            
+            // Start recording
+            mediaRecorder.start(1000); // Collect data every second
+            isRecording = true;
+            
+            // Update UI - Hide screen share button when recording
+            updateRecordingUI();
+            
+            // Start timer
+            recordingStartTime = new Date();
+            updateRecordingTimer();
+            recordingTimerInterval = setInterval(updateRecordingTimer, 1000);
+            
+            console.log("🎥 Recording started");
+            
+        } catch (error) {
+            console.error("Error starting recording:", error);
+            alert("Failed to start recording. Please check permissions and try again.");
+        }
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && isRecording) {
+            mediaRecorder.stop();
+            isRecording = false;
+            
+            // Update UI - Show screen share button again
+            updateRecordingUI();
+            
+            // Clear timer
+            if (recordingTimerInterval) {
+                clearInterval(recordingTimerInterval);
+                recordingTimerInterval = null;
+            }
+            
+            console.log("🎥 Recording stopped");
+        }
+    }
+
+    function updateRecordingUI() {
+        if (isRecording) {
+            // Show recording indicator and hide screen share button
+            recordingIndicator.classList.remove('hidden');
+            shareScreenBtn.classList.add('hidden');
+            recordBtn.classList.add('toggled');
+            recordBtn.querySelector("i").className = 'fas fa-square';
+            recordBtn.querySelector("span").textContent = 'Stop';
+        } else {
+            // Hide recording indicator and show screen share button
+            recordingIndicator.classList.add('hidden');
+            shareScreenBtn.classList.remove('hidden');
+            recordBtn.classList.remove('toggled');
+            recordBtn.querySelector("i").className = 'fas fa-record-vinyl';
+            recordBtn.querySelector("span").textContent = 'Record';
+        }
+    }
+
+    function updateRecordingTimer() {
+        if (!recordingStartTime) return;
+        
+        const now = new Date();
+        const diff = Math.floor((now - recordingStartTime) / 1000);
+        const minutes = Math.floor(diff / 60);
+        const seconds = diff % 60;
+        
+        recordingIndicator.querySelector("span").textContent = 
+            `Recording ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+
     // --- Captions System ---
     function toggleCaptions() {
         captionsEnabled = !captionsEnabled;
@@ -1195,35 +1600,6 @@
         captionInterval = setInterval(() => {
             updateCaptionsForActiveSpeaker();
         }, 3000);
-        
-        // For a real STT service, you would do something like:
-        /*
-        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const sttUrl = `${wsProtocol}//${location.host}/stt/${sessionStorage.getItem('room')}`;
-        
-        sttWebSocket = new WebSocket(sttUrl);
-        
-        sttWebSocket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'transcription' && data.userId) {
-                const containerId = `remoteContainer-${data.userId}`;
-                const captionsDisplay = document.querySelector(`#${containerId} .captions-display`);
-                if (captionsDisplay) {
-                    captionsDisplay.textContent = data.text;
-                    // Auto-hide after 5 seconds if no new text
-                    setTimeout(() => {
-                        if (captionsDisplay.textContent === data.text) {
-                            captionsDisplay.textContent = '';
-                        }
-                    }, 5000);
-                }
-            }
-        };
-        
-        sttWebSocket.onerror = (error) => {
-            console.error('STT WebSocket error:', error);
-        };
-        */
     }
 
     function stopCaptions() {
@@ -1528,6 +1904,11 @@
                 captionsBtn.querySelector("span").textContent = 'Captions';
             }
             
+            // Stop recording if active
+            if (isRecording) {
+                stopRecording();
+            }
+            
             setTimeout(() => {
                 console.log("🔄 Attempting WebSocket reconnect...");
                 connectWebSocket(room);
@@ -1585,9 +1966,7 @@
     }
 
     // --- UI Button Handlers ---
-    const roomFromUrl = getRoomIdFromURL();
-    roomInput.value = roomFromUrl;
-    joinBtn.onclick = () => joinCall(roomInput.value.trim() || "default-room", nameInput.value.trim() || "Guest");
+    joinBtn.onclick = () => joinCall("default-room", nameInput.value.trim() || "Guest");
 
     muteBtn.onclick = () => {
         const track = localStream.getAudioTracks()[0];
@@ -1656,6 +2035,14 @@
         }
     };
 
+    recordBtn.onclick = () => {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            showRecordingModal();
+        }
+    };
+
     captionsBtn.onclick = () => {
         toggleCaptions();
     };
@@ -1678,6 +2065,7 @@
         Object.values(pcs).forEach(pc => pc.close());
         if (ws) ws.close();
         stopCaptions(); // Ensure captions are stopped
+        if (isRecording) stopRecording(); // Stop recording if active
         if (localStream) localStream.getTracks().forEach(track => track.stop());
         if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
         
@@ -1688,12 +2076,23 @@
         }
     };
 
+    // Recording modal handlers
+    closeRecordingModal.onclick = hideRecordingModal;
+    cancelRecordingBtn.onclick = hideRecordingModal;
+    startRecordingBtn.onclick = startRecording;
+    
+    // Recording option selection
+    recordingOptions.forEach(option => {
+        option.addEventListener('click', () => {
+            selectRecordingOption(option.dataset.type);
+        });
+    });
+
     window.addEventListener('load', () => {
         const savedRoom = sessionStorage.getItem('room');
         const savedName = sessionStorage.getItem('name');
         if (savedRoom && savedName) {
             // Pre-fill fields for re-join
-            roomInput.value = savedRoom;
             nameInput.value = savedName;
             // Automatically join
             joinCall(savedRoom, savedName);
