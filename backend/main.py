@@ -8,6 +8,7 @@ from backend.auth.router import router as auth_router
 from backend.meetings.router import router as meetings_router
 from backend.scheduler.reminder import start_scheduler
 from backend.email.db import init_db
+from backend.scheduler.cleanup import scheduler, delete_expired_meetings
 
 # ✅ Import our new STT router and service
 from backend.routers import stt as stt_router
@@ -28,13 +29,15 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     init_db()
-    app.state.stt_service = SttService()  # ✅ Initialize STT service
+    app.state.stt_service = SttService()
+
+    # Start meeting reminder scheduler
     start_scheduler(app)
 
+    # Start auto-clean job every 5 min
+    scheduler.add_job(delete_expired_meetings, "interval", minutes=5)
+    print("🧹 Auto-clean meeting job started...")
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    await app.state.stt_service.shutdown()
 
 
 # --- Routers ---
@@ -42,21 +45,3 @@ app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(meetings_router, tags=["Meetings"])
 app.include_router(stt_router.router, tags=["Speech-to-Text"])  # ✅ add STT WebSocket route
 
-
-# --- Frontend ---
-frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
-if not os.path.isdir(frontend_dir):
-    raise RuntimeError(f"Frontend directory not found at: {frontend_dir}")
-
-app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
-
-@app.get("/")
-async def serve_index():
-    return FileResponse(os.path.join(frontend_dir, "index.html"))
-
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    path = os.path.join(frontend_dir, "favicon.ico")
-    if os.path.exists(path):
-        return FileResponse(path)
-    return {"status": "ok"}

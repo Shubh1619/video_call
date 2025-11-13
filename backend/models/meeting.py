@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, T
 from sqlalchemy.orm import relationship
 import datetime
 from backend.models.user import Base, User
+from sqlalchemy.dialects.postgresql import ARRAY
+
 
 class Meeting(Base):
     __tablename__ = "meetings"
@@ -19,7 +21,7 @@ class Meeting(Base):
     room_id = Column(String(255), nullable=False, unique=True, index=True)
     status = Column(String(50), default="scheduled", nullable=False)
     meeting_type = Column(String(50), default="regular", nullable=False)
-    attendee_emails = Column(Text, nullable=True)  # <-- Add this line
+    attendee_emails = Column(ARRAY(String), nullable=True)
 
     # Relationships (one-to-one)
     settings = relationship("MeetingSettings", back_populates="meeting", uselist=False)

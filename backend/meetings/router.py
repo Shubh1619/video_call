@@ -1,4 +1,7 @@
-import asyncio ,os, uuid, datetime, json, logging
+import asyncio, os, uuid, json, logging
+import datetime as dt                     # module as dt
+from datetime import datetime, timedelta   # datetime & timedelta class
+
 from fastapi import APIRouter, Depends, Body, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -18,20 +21,15 @@ from backend.core.config import MY_DOMAIN
 logging.basicConfig(level=logging.INFO)
 router = APIRouter()
 
-# --- Define frontend_dir once ---
-# This path points to '.../backend/../frontend', which is correct
+# --- Frontend Directory Path ---
 frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frontend'))
 if not os.path.isdir(frontend_dir):
     raise RuntimeError(f"Frontend directory not found at path: {frontend_dir}")
 
 
-@router.get("/meeting")
-def get_meeting(room: str):
-    """Serve the meeting HTML page."""
-    return FileResponse(os.path.join(frontend_dir, "index.html"))
-
-
-# ------------------- Schedule Meeting -------------------
+# ---------------------------------------------------------
+#                 SCHEDULE MEETING
+# ---------------------------------------------------------
 @router.post("/schedule")
 def schedule_meeting(
     background_tasks: BackgroundTasks,
@@ -43,8 +41,8 @@ def schedule_meeting(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    start_dt = datetime.datetime.fromisoformat(start_time)
-    end_dt = datetime.datetime.fromisoformat(end_time)
+    start_dt = datetime.fromisoformat(start_time)  # FIXED
+    end_dt = datetime.fromisoformat(end_time)
     room_id = str(uuid.uuid4())[:8]
     join_link = f"{MY_DOMAIN}/meeting?room={room_id}"
 
@@ -56,13 +54,15 @@ def schedule_meeting(
         attendee_emails=participants,
         meeting_link=join_link,
         room_id=room_id,
-        owner_id=current_user.id
+        owner_id=current_user.id,
+        meeting_type="regular"
     )
+
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
 
-    # Send invitations + Schedule reminder
+    # Send invitations + Reminder
     if participants:
         background_tasks.add_task(
             send_invitation_emails,
@@ -83,7 +83,9 @@ def schedule_meeting(
     }
 
 
-# ------------------- Instant Meeting -------------------
+# ---------------------------------------------------------
+#                 INSTANT MEETING
+# ---------------------------------------------------------
 @router.post("/instant")
 def create_instant_meeting(
     background_tasks: BackgroundTasks,
@@ -93,8 +95,8 @@ def create_instant_meeting(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    now = datetime.datetime.utcnow()
-    end_dt = now + datetime.timedelta(hours=1)
+    now = datetime.utcnow()         # FIXED
+    end_dt = now + timedelta(hours=1)  # FIXED timedelta
     room_id = str(uuid.uuid4())[:8]
     join_link = f"{MY_DOMAIN}/meeting?room={room_id}"
 
@@ -106,13 +108,15 @@ def create_instant_meeting(
         attendee_emails=participants,
         meeting_link=join_link,
         room_id=room_id,
-        owner_id=current_user.id
+        owner_id=current_user.id,
+        meeting_type="instant"
     )
 
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
 
+    # Send invitations
     if participants:
         background_tasks.add_task(
             send_instant_invitation_emails,
@@ -130,24 +134,20 @@ def create_instant_meeting(
         "participants": participants
     }
 
+
 # ---------------------------------------------------------
 #                 WEBSOCKET SIGNALING
 # ---------------------------------------------------------
 rooms: Dict[str, Dict[str, WebSocket]] = {}
 
-# --- ✅ FIXED: Changed from @app.websocket to @router.websocket ---
-
-# --- ✅ Fully updated WebSocket endpoint for Render deployment ---
 @router.websocket("/ws/{room_name}")
 async def websocket_endpoint(websocket: WebSocket, room_name: str):
     client_host = websocket.client.host if websocket.client else "unknown"
-    logging.info(f"🟢 Incoming WebSocket connection from {client_host} for room: {room_name}")
+    logging.info(f"🟢 WebSocket connected from {client_host} for room: {room_name}")
     await websocket.accept()
     client_id = ""
 
-    # --- ✅ Keep connection alive to prevent Render timeouts ---
     async def keep_alive():
-        """Send heartbeat messages periodically to avoid idle disconnects."""
         while True:
             try:
                 await websocket.send_text(json.dumps({"type": "ping"}))
@@ -163,64 +163,70 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
             msg = json.loads(data)
             sender_id = msg.get("from")
 
-            # --- ✅ Handle Join Event ---
+            # Join event
             if msg.get("type") == "join":
                 client_id = sender_id
-                if room_name not in rooms:
-                    rooms[room_name] = {}
+                rooms.setdefault(room_name, {})
                 rooms[room_name][client_id] = websocket
-                logging.info(f"👤 Client {client_id} joined room {room_name}")
+                logging.info(f"👤 {client_id} joined room {room_name}")
 
-                # Notify other participants
+                # Notify others
                 for other_id, client_ws in rooms[room_name].items():
                     if other_id != client_id:
-                        try:
-                            await client_ws.send_text(data)
-                        except Exception as e:
-                            logging.warning(f"⚠️ Failed to send join to {other_id}: {e}")
+                        await client_ws.send_text(data)
                 continue
 
-            # --- ✅ Handle Direct Messages ---
+            # Direct message
             recipient_id = msg.get("to")
             if recipient_id:
-                recipient_ws = rooms.get(room_name, {}).get(recipient_id)
-                if recipient_ws:
-                    try:
-                        await recipient_ws.send_text(data)
-                    except Exception as e:
-                        logging.warning(f"⚠️ Failed to send message to {recipient_id}: {e}")
+                if recipient_id in rooms.get(room_name, {}):
+                    await rooms[room_name][recipient_id].send_text(data)
             else:
-                # --- ✅ Broadcast Events (e.g., mute/unmute, offers, etc.) ---
+                # Broadcast
                 for other_id, client_ws in rooms.get(room_name, {}).items():
                     if other_id != sender_id:
-                        try:
-                            await client_ws.send_text(data)
-                        except Exception as e:
-                            logging.warning(f"⚠️ Broadcast send error to {other_id}: {e}")
+                        await client_ws.send_text(data)
 
     except WebSocketDisconnect:
-        logging.info(f"🔴 Client {client_id} disconnected from room {room_name}")
-        if room_name in rooms and client_id in rooms[room_name]:
+        logging.info(f"🔴 {client_id} disconnected from room {room_name}")
+        if client_id in rooms.get(room_name, {}):
             del rooms[room_name][client_id]
 
-            # Notify others that this user left
             for other_id, client_ws in rooms.get(room_name, {}).items():
-                try:
-                    await client_ws.send_text(json.dumps({
-                        "type": "user-left",
-                        "id": client_id
-                    }))
-                except Exception as e:
-                    logging.warning(f"⚠️ Failed to notify {other_id} about {client_id} leaving: {e}")
+                await client_ws.send_text(json.dumps({
+                    "type": "user-left",
+                    "id": client_id
+                }))
 
-            # Clean up empty rooms
-            if not rooms[room_name]:
-                del rooms[room_name]
-                logging.info(f"🧹 Room {room_name} deleted (no active participants)")
+        if room_name in rooms and not rooms[room_name]:
+            del rooms[room_name]
+            logging.info(f"🧹 Room {room_name} deleted")
 
     except Exception as e:
-        logging.error(f"❌ Unexpected error in WebSocket room {room_name}: {e}")
-        if client_id and room_name in rooms and client_id in rooms[room_name]:
-            del rooms[room_name][client_id]
-            if not rooms[room_name]:
-                del rooms[room_name]
+        logging.error(f"❌ WebSocket error in room {room_name}: {e}")
+
+
+# ---------------------------------------------------------
+#                 GET MEETINGS BY DATE
+# ---------------------------------------------------------
+@router.get("/meetings")
+def get_meetings_by_date(
+    date: str,  # format: YYYY-MM-DD
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        return {"error": "Invalid date format. Use YYYY-MM-DD"}
+
+    start_of_day = datetime.combine(target_date, datetime.min.time())
+    end_of_day = datetime.combine(target_date, datetime.max.time())
+
+    meetings = db.query(Meeting).filter(
+        Meeting.owner_id == current_user.id,
+        Meeting.scheduled_start >= start_of_day,
+        Meeting.scheduled_start <= end_of_day
+    ).all()
+
+    return {"date": date, "meetings": meetings}
