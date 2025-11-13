@@ -14,7 +14,7 @@ from backend.models.meeting import Meeting
 from backend.scheduler.reminder import schedule_reminder
 from backend.email.utils import send_invitation_emails, send_instant_invitation_emails
 from backend.core.config import MY_DOMAIN
-
+from backend.models.user import User
 # ---------------------------------------------------------
 #                 ROUTER SETUP
 # ---------------------------------------------------------
@@ -230,3 +230,22 @@ def get_meetings_by_date(
     ).all()
 
     return {"date": date, "meetings": meetings}
+
+
+
+@router.get("/user/{user_id}")
+def get_user_by_id(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        return {"error": "User not found"}
+
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email
+    }
