@@ -145,3 +145,11 @@ async def send_meeting_reminder(
     await fm.send_message(message)
 
 
+
+
+def send_note_reminder_email(email: str, note: str, note_date):
+    subject = f"Reminder: Note for {note_date}"
+    message = f"You have a note scheduled:\n\n{note}\n\nDate: {note_date}"
+
+    # implement your email logic here
+    print(f"Sending reminder to {email}")

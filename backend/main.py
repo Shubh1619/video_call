@@ -9,6 +9,7 @@ from backend.meetings.router import router as meetings_router
 from backend.scheduler.reminder import start_scheduler
 from backend.email.db import init_db
 from backend.scheduler.cleanup import scheduler, delete_expired_meetings
+from backend.notes.routes import router as notes_router
 
 # ✅ Import our new STT router and service
 from backend.routers import stt as stt_router
@@ -45,3 +46,5 @@ app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(meetings_router, tags=["Meetings"])
 app.include_router(stt_router.router, tags=["Speech-to-Text"])  # ✅ add STT WebSocket route
 
+
+app.include_router(notes_router, tags=["Notes"])
