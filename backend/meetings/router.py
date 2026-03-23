@@ -381,6 +381,15 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             msg = json.loads(data)
             msg_type = msg.get("type")
             
+            # normalize equivalent signals from frontend
+            if msg_type == "host-join":
+                msg_type = "join"
+                msg["is_host"] = True
+
+            if msg_type == "waiting-room-request":
+                msg_type = "join"
+                msg["is_host"] = False
+
             if msg_type == "join":
                 client_id = msg.get("from")
                 session_id = msg.get("session_id", "")
@@ -532,7 +541,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 }))
                 continue
 
-            if msg_type in ["offer", "answer", "candidate"]:
+            if msg_type in ["offer", "answer", "candidate", "ice-candidate"]:
                 recipient_id = msg.get("to")
                 if recipient_id and recipient_id in rooms.get(room_id, {}):
                     await rooms[room_id][recipient_id].send_text(data)
