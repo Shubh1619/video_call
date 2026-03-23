@@ -40,6 +40,8 @@ class MeetingSettings(Base):
     max_participants = Column(Integer, default=100)
     chat_enabled = Column(Boolean, default=True)
     screen_share_enabled = Column(Boolean, default=True)
+    waiting_room_enabled = Column(Boolean, default=False)
+    allow_guest_join = Column(Boolean, default=True)
     meeting_id = Column(Integer, ForeignKey("meetings.id"))
     meeting = relationship("Meeting", back_populates="settings")
 

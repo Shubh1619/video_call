@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ✅ Mail configuration with timeout
+# ✅ Mail configuration with extended timeout for Gmail SMTP
 conf = ConnectionConfig(
     MAIL_USERNAME=MAIL_USERNAME,
     MAIL_PASSWORD=MAIL_PASSWORD,
@@ -24,7 +24,7 @@ conf = ConnectionConfig(
     MAIL_SSL_TLS=False,
     USE_CREDENTIALS=True,
     MAIL_FROM_NAME=MAIL_FROM_NAME,
-    TIMEOUT=5,  # 5 second timeout
+    TIMEOUT=60,  # 60 second timeout for Gmail SMTP
 )
 
 fm = FastMail(conf)
@@ -34,9 +34,9 @@ fm = FastMail(conf)
 # ✅ Safe Email Sender with Timeout
 # ------------------------------
 async def safe_send_email(message):
-    """Send email with timeout - won't block if SMTP fails."""
+    """Send email with extended timeout - won't block if SMTP fails."""
     try:
-        await asyncio.wait_for(fm.send_message(message), timeout=5.0)
+        await asyncio.wait_for(fm.send_message(message), timeout=30.0)
         logger.info("✅ Email sent successfully")
     except asyncio.TimeoutError:
         logger.warning("⚠️ Email sending timed out - skipping")
