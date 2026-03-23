@@ -6,6 +6,9 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from datetime import datetime, timezone
 import os
+from fastapi import WebSocket, WebSocketDisconnect
+from typing import Dict, List
+import json
 
 from backend.auth.router import router as auth_router
 from backend.meetings.router import router as meetings_router
@@ -16,6 +19,34 @@ from backend.routers import stt as stt_router
 from backend.services.stt_service import SttService
 from backend.core.rate_limit import limiter
 from backend.core.config import CORS_ORIGINS, REDIS_ENABLED
+
+# WebSocket manager for signaling
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, room: str):
+        await websocket.accept()
+        if room not in self.active_connections:
+            self.active_connections[room] = []
+        self.active_connections[room].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, room: str):
+        if room in self.active_connections:
+            self.active_connections[room].remove(websocket)
+            if not self.active_connections[room]:
+                del self.active_connections[room]
+
+    async def broadcast(self, message: str, room: str, exclude: WebSocket = None):
+        if room in self.active_connections:
+            for connection in self.active_connections[room]:
+                if connection != exclude:
+                    try:
+                        await connection.send_text(message)
+                    except:
+                        pass
+
+manager = ConnectionManager()
 
 app = FastAPI(title="AI Meeting Assistant - Secure Meeting")
 
@@ -128,3 +159,14 @@ app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(meetings_router, tags=["Meetings"])
 app.include_router(stt_router.router, tags=["Speech-to-Text"])
 app.include_router(notes_router, tags=["Notes"])
+
+# --- WebSocket for WebRTC signaling ---
+@app.websocket("/ws/{room_id}")
+async def websocket_endpoint(websocket: WebSocket, room_id: str):
+    await manager.connect(websocket, room_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await manager.broadcast(data, room_id, websocket)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, room_id)
