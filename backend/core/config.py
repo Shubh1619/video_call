@@ -8,7 +8,7 @@ load_dotenv()
 # -----------------------------
 # DOMAIN CONFIGURATION
 # -----------------------------
-MY_DOMAIN = os.getenv("MY_DOMAIN", "http://localhost:5173")
+MY_DOMAIN = os.getenv("MY_DOMAIN", "https://meet-frontend-4op.pages.dev")
 
 # -----------------------------
 # DATABASE CONFIGURATION
