@@ -1,9 +1,9 @@
 import asyncio, os, uuid, json, logging
 import datetime as dt                     # module as dt
-from datetime import datetime, timedelta   # datetime & timedelta class
+from datetime import datetime, timedelta, timezone   # datetime & timedelta class
 
 from fastapi import APIRouter, Depends, Body, BackgroundTasks, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from typing import Dict 
 
@@ -11,8 +11,8 @@ from typing import Dict
 from backend.email.db import get_db
 from backend.auth.utils import get_current_user
 from backend.models.meeting import Meeting
-from backend.scheduler.reminder import schedule_reminder
-from backend.email.utils import send_invitation_emails, send_instant_invitation_emails
+from backend.scheduler.unified_scheduler import schedule_meeting_reminder
+from backend.email.utils import send_invitation_emails, send_instant_invitation_emails ,meeting_to_dict
 from backend.core.config import MY_DOMAIN
 from backend.models.user import User
 # ---------------------------------------------------------
@@ -21,15 +21,26 @@ from backend.models.user import User
 logging.basicConfig(level=logging.INFO)
 router = APIRouter()
 
-# --- Frontend Directory Path ---
-frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'frontend'))
-if not os.path.isdir(frontend_dir):
-    raise RuntimeError(f"Frontend directory not found at path: {frontend_dir}")
-
 
 # ---------------------------------------------------------
 #                 SCHEDULE MEETING
 # ---------------------------------------------------------
+def parse_datetime_to_utc(dt_str: str) -> datetime:
+    """Parse datetime string (naive/local) and convert to UTC."""
+    try:
+        # Parse the datetime string
+        dt = datetime.fromisoformat(dt_str)
+    except ValueError:
+        # Fallback for other formats
+        dt = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S")
+    
+    if dt.tzinfo is None:
+        # Treat as local timezone and convert to UTC
+        local_tz = datetime.now().astimezone().tzinfo
+        dt = dt.replace(tzinfo=local_tz).astimezone(timezone.utc)
+    
+    return dt
+
 @router.post("/schedule")
 def schedule_meeting(
     background_tasks: BackgroundTasks,
@@ -41,10 +52,17 @@ def schedule_meeting(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    start_dt = datetime.fromisoformat(start_time)  # FIXED
-    end_dt = datetime.fromisoformat(end_time)
+    logging.info(f"📅 Received start_time: {start_time}, end_time: {end_time}")
+    logging.info(f"📅 System local timezone: {datetime.now().astimezone().tzinfo}")
+    
+    start_dt = parse_datetime_to_utc(start_time)
+    end_dt = parse_datetime_to_utc(end_time)
+    
+    logging.info(f"📅 Parsed start_dt (UTC): {start_dt}")
+    logging.info(f"📅 Parsed start_dt date only: {start_dt.strftime('%Y-%m-%d')}")
+        
     room_id = str(uuid.uuid4())[:8]
-    join_link = f"{MY_DOMAIN}/meeting?room={room_id}"
+    join_link = f"{MY_DOMAIN}/meeting/{room_id}"
 
     meeting = Meeting(
         title=title,
@@ -62,7 +80,6 @@ def schedule_meeting(
     db.commit()
     db.refresh(meeting)
 
-    # Send invitations + Reminder
     if participants:
         background_tasks.add_task(
             send_invitation_emails,
@@ -73,7 +90,7 @@ def schedule_meeting(
             agenda=agenda,
             start_dt=start_dt
         )
-        schedule_reminder(meeting.id, start_dt, participants)
+        schedule_meeting_reminder(meeting.id, start_dt, participants)
 
     return {
         "msg": "Scheduled meeting created.",
@@ -95,10 +112,10 @@ def create_instant_meeting(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    now = datetime.utcnow()         # FIXED
-    end_dt = now + timedelta(hours=1)  # FIXED timedelta
+    now = datetime.now(timezone.utc)
+    end_dt = now + timedelta(hours=1)
     room_id = str(uuid.uuid4())[:8]
-    join_link = f"{MY_DOMAIN}/meeting?room={room_id}"
+    join_link = f"{MY_DOMAIN}/meeting/{room_id}"
 
     meeting = Meeting(
         title=title,
@@ -116,7 +133,6 @@ def create_instant_meeting(
     db.commit()
     db.refresh(meeting)
 
-    # Send invitations
     if participants:
         background_tasks.add_task(
             send_instant_invitation_emails,
@@ -211,17 +227,15 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
 # ---------------------------------------------------------
 @router.get("/meetings")
 def get_meetings_by_date(
-    date: str,  # format: YYYY-MM-DD
+    date: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    try:
-        target_date = datetime.strptime(date, "%Y-%m-%d").date()
-    except ValueError:
-        return {"error": "Invalid date format. Use YYYY-MM-DD"}
-
-    start_of_day = datetime.combine(target_date, datetime.min.time())
-    end_of_day = datetime.combine(target_date, datetime.max.time())
+    target_date = datetime.strptime(date, "%Y-%m-%d")
+    
+    # Use UTC for consistent timezone handling
+    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
 
     meetings = db.query(Meeting).filter(
         Meeting.owner_id == current_user.id,
@@ -229,7 +243,11 @@ def get_meetings_by_date(
         Meeting.scheduled_start <= end_of_day
     ).all()
 
-    return {"date": date, "meetings": meetings}
+    return {
+        "date": date,
+        "meetings": [meeting_to_dict(m) for m in meetings]
+    }
+
 
 
 
@@ -249,3 +267,153 @@ def get_user_by_id(
         "name": user.name,
         "email": user.email
     }
+
+@router.get("/meetings/by-month")
+def get_meetings_by_month(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    # Use UTC for consistent date comparisons
+    start_date = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end_date = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+
+    meetings = db.query(Meeting).filter(
+        Meeting.owner_id == current_user.id,
+        Meeting.scheduled_start >= start_date,
+        Meeting.scheduled_start < end_date
+    ).all()
+
+    # Return dates in YYYY-MM-DD format based on UTC
+    return {
+        "dates": [m.scheduled_start.strftime("%Y-%m-%d") for m in meetings],
+        "meetings": [{"id": m.id, "date": m.scheduled_start.strftime("%Y-%m-%d")} for m in meetings]
+    }
+
+
+# Backward-compatible endpoint (matches frontend expectations)
+@router.get("/meetings/month")
+def get_meetings_by_month_compat(
+    month: str,  # Format: "YYYY-MM"
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    try:
+        year, mon = map(int, month.split("-"))
+    except (ValueError, AttributeError):
+        return {"dates": [], "meetings": []}
+    
+    return get_meetings_by_month(year, mon, db, current_user)
+
+
+# ---------------------------------------------------------
+#                 CLEANUP MEETINGS
+# ---------------------------------------------------------
+@router.post("/meetings/cleanup")
+def cleanup_expired_meetings(
+    db: Session = Depends(get_db),
+):
+    """
+    Manually trigger cleanup of expired meetings.
+    - Instant meetings older than 2 hours
+    - Scheduled meetings 30 minutes after end time
+    """
+    from backend.scheduler.unified_scheduler import delete_expired_meetings
+    
+    try:
+        delete_expired_meetings()
+        return {"message": "Expired meetings cleaned up successfully"}
+    except Exception as e:
+        logging.error(f"Cleanup failed: {e}")
+        return {"error": str(e)}
+
+
+@router.get("/meetings/expired-count")
+def get_expired_meetings_count(
+    db: Session = Depends(get_db),
+):
+    """
+    Get count of meetings that would be deleted by cleanup.
+    """
+    now = datetime.now(timezone.utc)
+    
+    instant_expired = db.query(Meeting).filter(
+        Meeting.meeting_type == "instant",
+        Meeting.scheduled_start <= now - timedelta(hours=2)
+    ).count()
+
+    scheduled_expired = db.query(Meeting).filter(
+        Meeting.meeting_type == "regular",
+        Meeting.scheduled_end <= now - timedelta(minutes=30)
+    ).count()
+
+    return {
+        "instant_expired": instant_expired,
+        "scheduled_expired": scheduled_expired,
+        "total": instant_expired + scheduled_expired
+    }
+
+
+# ---------------------------------------------------------
+#                 DELETE SCHEDULED MEETING
+# ---------------------------------------------------------
+@router.delete("/meetings/{meeting_id}")
+def delete_scheduled_meeting(
+    meeting_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    Delete a scheduled (regular) meeting by ID.
+    Only the owner can delete their meeting.
+    """
+    meeting = db.query(Meeting).filter(
+        Meeting.id == meeting_id,
+        Meeting.owner_id == current_user.id,
+        Meeting.meeting_type == "regular"
+    ).first()
+
+    if not meeting:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Scheduled meeting not found or not authorized"}
+        )
+
+    db.delete(meeting)
+    db.commit()
+
+    logging.info(f"🗑️ Deleted scheduled meeting {meeting_id}")
+    return {"message": "Scheduled meeting deleted successfully", "id": meeting_id}
+
+
+# ---------------------------------------------------------
+#                 DEBUG ENDPOINT
+# ---------------------------------------------------------
+@router.get("/debug/all-meetings")
+def debug_get_all_meetings(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Debug endpoint to see raw meeting data."""
+    meetings = db.query(Meeting).filter(
+        Meeting.owner_id == current_user.id
+    ).all()
+    
+    return {
+        "meetings": [
+            {
+                "id": m.id,
+                "title": m.title,
+                "scheduled_start_raw": str(m.scheduled_start),
+                "scheduled_start_date": m.scheduled_start.strftime("%Y-%m-%d") if m.scheduled_start is not None else None,
+                "scheduled_start_iso": m.scheduled_start.isoformat() if m.scheduled_start is not None else None,
+                "meeting_type": m.meeting_type,
+            }
+            for m in meetings
+        ]
+    }
+

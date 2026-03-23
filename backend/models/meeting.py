@@ -1,8 +1,12 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.orm import relationship
-import datetime
+from datetime import datetime, timezone
 from backend.models.user import Base, User
 from sqlalchemy.dialects.postgresql import ARRAY
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
 
 
 class Meeting(Base):
@@ -10,12 +14,12 @@ class Meeting(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
     agenda = Column(String(255), nullable=True)
-    scheduled_start = Column(DateTime, nullable=False)
-    scheduled_end = Column(DateTime, nullable=False)
+    scheduled_start = Column(DateTime(timezone=True), nullable=False)
+    scheduled_end = Column(DateTime(timezone=True), nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="meetings")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    last_updated = Column(DateTime, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    last_updated = Column(DateTime(timezone=True), onupdate=utc_now)
     meeting_link = Column(String(255), nullable=False, unique=True)
     meeting_url = Column(String(255), unique=True, index=True)
     room_id = Column(String(255), nullable=False, unique=True, index=True)

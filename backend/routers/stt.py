@@ -8,14 +8,17 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, s
 from fastapi import HTTPException
 from fastapi.websockets import WebSocketState
 from fastapi import Request
+from backend.core.config import JWT_SECRET, SECRET_KEY
 
 router = APIRouter()
-JWT_SECRET = os.environ.get("JWT_SECRET", "replace_this_secret")  # set in prod
+
+# Use JWT_SECRET from config (falls back to SECRET_KEY if not set)
+_jwt_secret = JWT_SECRET if JWT_SECRET else SECRET_KEY
 
 
 def validate_jwt(token: str, expected_user_id: str, room_id: str):
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(token, _jwt_secret, algorithms=["HS256"])
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {str(e)}")
     # Minimal checks: 'sub' must equal expected_user_id. Add room membership checks if present.

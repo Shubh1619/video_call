@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 
@@ -29,6 +29,8 @@ class MeetingCreate(BaseModel):
     transcript: Optional[str] = None
 
 class MeetingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     room_id: str
     meeting_link: str
@@ -44,6 +46,3 @@ class MeetingResponse(BaseModel):
     security: Optional[MeetingSecuritySchema]
     recording: Optional[MeetingRecordingSchema]
     transcript: Optional[str]
-
-    class Config:
-        orm_mode = True
