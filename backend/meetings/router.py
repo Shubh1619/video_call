@@ -184,12 +184,25 @@ async def websocket_endpoint(websocket: WebSocket, room_name: str):
                 client_id = sender_id
                 rooms.setdefault(room_name, {})
                 rooms[room_name][client_id] = websocket
-                logging.info(f"👤 {client_id} joined room {room_name}")
+                logging.info(f"👤 {client_id} (name: {msg.get('name', 'Unknown')}) joined room {room_name}")
 
-                # Notify others
+                # Notify others about new user
                 for other_id, client_ws in rooms[room_name].items():
                     if other_id != client_id:
-                        await client_ws.send_text(data)
+                        await client_ws.send_text(json.dumps({
+                            "type": "user-joined",
+                            "id": client_id,
+                            "name": msg.get("name", "User")
+                        }))
+
+                # Send list of existing participants to new user
+                for other_id in rooms[room_name].keys():
+                    if other_id != client_id:
+                        await websocket.send_text(json.dumps({
+                            "type": "user-joined",
+                            "id": other_id,
+                            "name": "User"
+                        }))
                 continue
 
             # Direct message
