@@ -3,18 +3,21 @@ import datetime as dt
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Body, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, Body, BackgroundTasks, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from jose import jwt, JWTError
 
 from backend.email.db import get_db
 from backend.auth.utils import get_current_user, decode_token as decode_jwt_token
 from backend.models.meeting import Meeting, MeetingSettings
 from backend.scheduler.unified_scheduler import schedule_meeting_reminder
 from backend.email.utils import send_invitation_emails, send_instant_invitation_emails, meeting_to_dict
-from backend.core.config import MY_DOMAIN
+from backend.core.config import MY_DOMAIN, SECRET_KEY
 from backend.models.user import User
 from backend.services.guest_session import guest_session_manager
+
+JWT_ALGORITHM = "HS256"
 
 logging.basicConfig(level=logging.INFO)
 router = APIRouter()
@@ -110,18 +113,42 @@ def schedule_meeting(
 
 @router.post("/instant")
 def create_instant_meeting(
+    request: Request,
     background_tasks: BackgroundTasks,
     title: str = Body(...),
     agenda: str = Body(None),
+    host_name: str = Body(None),
     participants: list[str] = Body([]),
     waiting_room: bool = Body(False),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
 ):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+    
+    current_user = None
+    if token:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+            email = payload.get("sub")
+            if email:
+                current_user = db.query(User).filter(User.email == email).first()
+        except JWTError:
+            pass
     now = datetime.now(timezone.utc)
     end_dt = now + timedelta(hours=1)
     room_id = str(uuid.uuid4())[:8]
     join_link = f"{MY_DOMAIN}/meeting/{room_id}"
+
+    owner_id = None
+    organizer_email = None
+    if current_user:
+        owner_id = current_user.id
+        organizer_email = current_user.email
+        host_display_name = current_user.name or current_user.email
+    else:
+        owner_id = None
+        organizer_email = "guest@meetify"
+        host_display_name = host_name or "Guest Host"
 
     meeting = Meeting(
         title=title,
@@ -131,7 +158,7 @@ def create_instant_meeting(
         attendee_emails=participants,
         meeting_link=join_link,
         room_id=room_id,
-        owner_id=current_user.id,
+        owner_id=owner_id,
         meeting_type="instant"
     )
 
@@ -145,16 +172,16 @@ def create_instant_meeting(
 
     session_id, guest_token = guest_session_manager.create_guest_session(
         room_id=room_id,
-        name=current_user.name or current_user.email,
-        user_id=current_user.id,
+        name=host_display_name,
+        user_id=owner_id,
         is_host=True
     )
 
-    if participants:
+    if participants and organizer_email != "guest@meetify":
         background_tasks.add_task(
             send_instant_invitation_emails,
             recipients=participants,
-            organizer_email=current_user.email,
+            organizer_email=organizer_email,
             join_link=join_link,
             title=title,
             agenda=agenda,
@@ -762,3 +789,36 @@ def debug_get_all_meetings(
             for m in meetings
         ]
     }
+
+
+@router.websocket("/ws-guest/{room_id}")
+async def websocket_guest_endpoint(websocket: WebSocket, room_id: str):
+    await websocket.accept()
+    
+    try:
+        data = await websocket.receive_text()
+        msg = json.loads(data)
+        
+        if msg.get("type") == "register":
+            name = msg.get("name", "Guest")
+            is_host_request = msg.get("is_host", False)
+            
+            session_id, guest_token = guest_session_manager.create_guest_session(
+                room_id=room_id,
+                name=name,
+                user_id=None,
+                is_host=is_host_request
+            )
+            
+            await websocket.send_json({
+                "type": "registered",
+                "session_id": session_id,
+                "guest_token": guest_token,
+                "name": name
+            })
+    except Exception as e:
+        await websocket.send_json({
+            "type": "error",
+            "message": str(e)
+        })
+
