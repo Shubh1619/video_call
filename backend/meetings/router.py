@@ -439,23 +439,39 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 user_name  = msg.get("name", "Guest")
                 session_id = msg.get("session_id", "")
 
-                # Resolve role from session manager first, then fall back to msg flag
+                # Resolve role from session manager only.
+                # Clients must present a valid host session to enter directly as host.
                 session = guest_session_manager.get_session(session_id) if session_id else None
                 if session:
                     is_host   = session.is_host
                     user_name = session.name
+                    previous_client_id = session.client_id
                     guest_session_manager.link_client(session_id, client_id)
                 else:
-                    is_host = bool(msg.get("is_host", False))
-                    if is_host:
-                        existing_host = guest_session_manager.get_host_session(room_id)
-                        if existing_host:
-                            guest_session_manager.link_client(existing_host.session_id, client_id)
+                    is_host = False
+                    previous_client_id = None
 
                 # Ensure room structures exist
                 rooms.setdefault(room_id, {})
                 waiting_rooms.setdefault(room_id, [])
                 participant_names.setdefault(room_id, {})
+
+                if previous_client_id and previous_client_id != client_id:
+                    old_active_ws = rooms[room_id].pop(previous_client_id, None)
+                    participant_names[room_id].pop(previous_client_id, None)
+                    waiting_rooms[room_id] = [
+                        w for w in waiting_rooms.get(room_id, [])
+                        if w["client_id"] != previous_client_id and w.get("session_id") != session_id
+                    ]
+
+                    if room_hosts.get(room_id) == previous_client_id:
+                        room_hosts[room_id] = client_id
+
+                    if old_active_ws:
+                        await broadcast_to_room(room_id, {
+                            "type": "user-left",
+                            "id": previous_client_id
+                        })
 
                 # ── HOST joins ────────────────
                 if is_host:
@@ -493,6 +509,38 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
 
                 # ── GUEST joins ───────────────
                 else:
+                    if session and session.is_approved:
+                        rooms[room_id][client_id] = websocket
+                        participant_names[room_id][client_id] = user_name
+                        is_in_waiting = False
+
+                        await safe_send(websocket, {
+                            "type": "approved",
+                            "message": "Welcome back to the meeting."
+                        })
+
+                        await broadcast_to_room(room_id, {
+                            "type": "user-joined",
+                            "id": client_id,
+                            "name": user_name
+                        }, exclude_id=client_id)
+
+                        for other_id in list(rooms[room_id].keys()):
+                            if other_id != client_id:
+                                other_name = participant_names[room_id].get(other_id, "Participant")
+                                await safe_send(websocket, {
+                                    "type": "user-joined",
+                                    "id": other_id,
+                                    "name": other_name
+                                })
+
+                        logging.info(f"Approved guest '{user_name}' ({client_id}) rejoined room {room_id}")
+                        continue
+
+                    waiting_rooms[room_id] = [
+                        w for w in waiting_rooms.get(room_id, [])
+                        if w["client_id"] != client_id and w.get("session_id") != session_id
+                    ]
                     waiting_rooms[room_id].append({
                         "client_id": client_id,
                         "name": user_name,
@@ -554,6 +602,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 if target_entry:
                     target_ws   = target_entry["ws"]
                     target_name = target_entry["name"]
+                    guest_session_manager.approve_guest(room_id, target_id)
 
                     # Add to active room
                     rooms[room_id][target_id] = target_ws
@@ -671,7 +720,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             # ══════════════════════════════════
             #  AUDIO / VIDEO toggle (broadcast)
             # ══════════════════════════════════
-            if msg_type in ("audio-toggle", "video-toggle"):
+            if msg_type in ("audio-toggle", "video-toggle", "update-state"):
                 await broadcast_to_room(room_id, msg, exclude_id=client_id)
                 continue
 
