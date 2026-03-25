@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 
-from backend.email.db import get_db
+from backend.email.db import get_db, SessionLocal
 from backend.auth.utils import get_current_user, decode_token as decode_jwt_token
 from backend.models.meeting import Meeting, MeetingSettings
 from backend.scheduler.unified_scheduler import schedule_meeting_reminder
@@ -438,6 +438,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 client_id  = msg.get("from", str(uuid.uuid4()))
                 user_name  = msg.get("name", "Guest")
                 session_id = msg.get("session_id", "")
+                token      = msg.get("token", "")
+                requested_host = bool(msg.get("is_host", False))
 
                 # Resolve role from session manager only.
                 # Clients must present a valid host session to enter directly as host.
@@ -450,6 +452,23 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 else:
                     is_host = False
                     previous_client_id = None
+                    # Fallback: verify host directly from JWT and meeting ownership.
+                    if requested_host and token:
+                        db = SessionLocal()
+                        try:
+                            payload = decode_jwt_token(token)
+                            email = payload.get("sub")
+                            if email:
+                                meeting = db.query(Meeting).filter(Meeting.room_id == room_id).first()
+                                if meeting and meeting.owner_id:
+                                    owner = db.query(User).filter(User.id == meeting.owner_id).first()
+                                    if owner and owner.email == email:
+                                        is_host = True
+                                        user_name = owner.name or owner.email or user_name
+                        except Exception:
+                            is_host = False
+                        finally:
+                            db.close()
 
                 # Ensure room structures exist
                 rooms.setdefault(room_id, {})
