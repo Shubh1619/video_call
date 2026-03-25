@@ -571,6 +571,9 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             #  Block waiting-room users from
             #  sending anything else
             # ══════════════════════════════════
+            if is_in_waiting and client_id in rooms.get(room_id, {}):
+                is_in_waiting = False
+
             if is_in_waiting:
                 await safe_send(websocket, {
                     "type": "waiting",
