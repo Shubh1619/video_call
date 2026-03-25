@@ -35,6 +35,7 @@ def parse_datetime_to_utc(dt_str: str) -> datetime:
     
     return dt_obj
 
+
 def get_meeting_settings(db: Session, meeting: Meeting) -> MeetingSettings:
     settings = db.query(MeetingSettings).filter(MeetingSettings.meeting_id == meeting.id).first()
     if not settings:
@@ -50,6 +51,11 @@ def get_meeting_settings(db: Session, meeting: Meeting) -> MeetingSettings:
         db.commit()
         db.refresh(settings)
     return settings
+
+
+# ─────────────────────────────────────────────
+#  REST endpoints (unchanged)
+# ─────────────────────────────────────────────
 
 @router.post("/schedule")
 def schedule_meeting(
@@ -134,13 +140,12 @@ def create_instant_meeting(
                 current_user = db.query(User).filter(User.email == email).first()
         except JWTError:
             pass
+
     now = datetime.now(timezone.utc)
     end_dt = now + timedelta(hours=1)
     room_id = str(uuid.uuid4())[:8]
     join_link = f"{MY_DOMAIN}/meeting/{room_id}"
 
-    owner_id = None
-    organizer_email = None
     if current_user:
         owner_id = current_user.id
         organizer_email = current_user.email
@@ -200,16 +205,12 @@ def create_instant_meeting(
 
 
 @router.get("/meeting/{room_id}")
-def get_meeting_info(
-    room_id: str,
-    db: Session = Depends(get_db)
-):
+def get_meeting_info(room_id: str, db: Session = Depends(get_db)):
     meeting = db.query(Meeting).filter(Meeting.room_id == room_id).first()
     if not meeting:
         return JSONResponse(status_code=404, content={"error": "Meeting not found"})
     
     settings = get_meeting_settings(db, meeting)
-    
     host_user = db.query(User).filter(User.id == meeting.owner_id).first()
     
     return {
@@ -267,13 +268,16 @@ def update_meeting_settings(
     
     db.commit()
     
-    return {"message": "Settings updated", "settings": {
-        "waiting_room_enabled": settings.waiting_room_enabled,
-        "allow_guest_join": settings.allow_guest_join,
-        "max_participants": settings.max_participants,
-        "chat_enabled": settings.chat_enabled,
-        "screen_share_enabled": settings.screen_share_enabled
-    }}
+    return {
+        "message": "Settings updated",
+        "settings": {
+            "waiting_room_enabled": settings.waiting_room_enabled,
+            "allow_guest_join": settings.allow_guest_join,
+            "max_participants": settings.max_participants,
+            "chat_enabled": settings.chat_enabled,
+            "screen_share_enabled": settings.screen_share_enabled
+        }
+    }
 
 
 @router.post("/guest/session")
@@ -349,22 +353,60 @@ def create_host_session(
         return JSONResponse(status_code=401, content={"error": "Invalid token"})
 
 
+# ─────────────────────────────────────────────
+#  In-memory room state
+# ─────────────────────────────────────────────
+
+# rooms[room_id][client_id] = WebSocket
 rooms: Dict[str, Dict[str, WebSocket]] = {}
+
+# room_hosts[room_id] = client_id of the host
 room_hosts: Dict[str, str] = {}
-waiting_room: Dict[str, List[Dict]] = {}
+
+# waiting_rooms[room_id] = list of {client_id, name, session_id, ws}
+waiting_rooms: Dict[str, List[Dict]] = {}
+
+# participant names  participant_names[room_id][client_id] = name
+participant_names: Dict[str, Dict[str, str]] = {}
+
+
+# ─────────────────────────────────────────────
+#  Helper: safe send
+# ─────────────────────────────────────────────
+
+async def safe_send(ws: WebSocket, payload: dict):
+    """Send JSON to a WebSocket, silently ignore if connection is gone."""
+    try:
+        await ws.send_text(json.dumps(payload))
+    except Exception as e:
+        logging.warning(f"safe_send failed: {e}")
+
+
+async def broadcast_to_room(room_id: str, payload: dict, exclude_id: str = ""):
+    """Broadcast a message to every connected client in a room."""
+    for cid, ws in list(rooms.get(room_id, {}).items()):
+        if cid != exclude_id:
+            await safe_send(ws, payload)
+
+
+# ─────────────────────────────────────────────
+#  Main WebSocket endpoint
+# ─────────────────────────────────────────────
 
 @router.websocket("/ws/{room_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str):
     client_host_ip = websocket.client.host if websocket.client else "unknown"
-    logging.info(f"WebSocket connected from {client_host_ip} for room: {room_id}")
-    
-    await websocket.accept()
-    client_id = ""
-    session_id = ""
-    user_name = "Guest"
-    is_host = False
-    is_in_waiting = False
+    logging.info(f"WebSocket connection attempt from {client_host_ip} for room: {room_id}")
 
+    await websocket.accept()
+
+    # Per-connection state
+    client_id: str = ""
+    user_name: str = "Guest"
+    is_host: bool = False
+    is_in_waiting: bool = False
+
+    # ── Keep-alive ping task ──────────────────
     async def keep_alive():
         while True:
             try:
@@ -373,289 +415,386 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             except Exception:
                 break
 
-    asyncio.create_task(keep_alive())
+    ping_task = asyncio.create_task(keep_alive())
 
     try:
         while True:
-            data = await websocket.receive_text()
-            msg = json.loads(data)
-            msg_type = msg.get("type")
-            
-            # normalize equivalent signals from frontend
+            raw = await websocket.receive_text()
+            msg = json.loads(raw)
+            msg_type = msg.get("type", "")
+
+            # ── Normalise message types ───────
             if msg_type == "host-join":
                 msg_type = "join"
                 msg["is_host"] = True
-
-            if msg_type == "waiting-room-request":
+            elif msg_type == "waiting-room-request":
                 msg_type = "join"
                 msg["is_host"] = False
 
+            # ══════════════════════════════════
+            #  JOIN
+            # ══════════════════════════════════
             if msg_type == "join":
-                client_id = msg.get("from")
+                client_id  = msg.get("from", str(uuid.uuid4()))
+                user_name  = msg.get("name", "Guest")
                 session_id = msg.get("session_id", "")
-                user_name = msg.get("name", "Guest")
-                is_host_user = msg.get("is_host", False)
-                
-                session = guest_session_manager.get_session(session_id)
+
+                # Resolve role from session manager first, then fall back to msg flag
+                session = guest_session_manager.get_session(session_id) if session_id else None
                 if session:
-                    is_host = session.is_host
+                    is_host   = session.is_host
                     user_name = session.name
                     guest_session_manager.link_client(session_id, client_id)
-                elif is_host_user:
-                    existing_host = guest_session_manager.get_host_session(room_id)
-                    if existing_host:
-                        is_host = True
-                        session_id = existing_host.session_id
-                        guest_session_manager.link_client(session_id, client_id)
-                
-                waiting_room.setdefault(room_id, [])
+                else:
+                    is_host = bool(msg.get("is_host", False))
+                    if is_host:
+                        existing_host = guest_session_manager.get_host_session(room_id)
+                        if existing_host:
+                            guest_session_manager.link_client(existing_host.session_id, client_id)
+
+                # Ensure room structures exist
                 rooms.setdefault(room_id, {})
-                
+                waiting_rooms.setdefault(room_id, [])
+                participant_names.setdefault(room_id, {})
+
+                # ── HOST joins ────────────────
                 if is_host:
                     room_hosts[room_id] = client_id
-                    
-                    for wait_entry in waiting_room[room_id]:
-                        await websocket.send_text(json.dumps({
+                    rooms[room_id][client_id] = websocket          # FIX: host was never added to rooms
+                    participant_names[room_id][client_id] = user_name
+
+                    logging.info(f"Host '{user_name}' ({client_id}) joined room {room_id}")
+
+                    # Tell host about everyone already in the room
+                    for other_id in list(rooms[room_id].keys()):
+                        if other_id != client_id:
+                            other_name = participant_names[room_id].get(other_id, "Participant")
+                            await safe_send(websocket, {
+                                "type": "user-joined",
+                                "id": other_id,
+                                "name": other_name
+                            })
+
+                    # Tell host about pending waiting-room entries
+                    for entry in waiting_rooms[room_id]:
+                        await safe_send(websocket, {
                             "type": "waiting-user",
-                            "client_id": wait_entry["client_id"],
-                            "name": wait_entry["name"]
-                        }))
+                            "client_id": entry["client_id"],
+                            "name": entry["name"]
+                        })
+
+                    # Tell existing participants that host joined
+                    await broadcast_to_room(room_id, {
+                        "type": "user-joined",
+                        "id": client_id,
+                        "name": user_name,
+                        "is_host": True
+                    }, exclude_id=client_id)
+
+                # ── GUEST joins ───────────────
                 else:
-                    waiting_entry = {
+                    waiting_rooms[room_id].append({
                         "client_id": client_id,
                         "name": user_name,
                         "session_id": session_id,
                         "ws": websocket
-                    }
-                    waiting_room[room_id].append(waiting_entry)
+                    })
                     is_in_waiting = True
-                    
-                    if room_id in room_hosts:
-                        host_ws = rooms[room_id].get(room_hosts[room_id])
-                        if host_ws:
-                            await host_ws.send_text(json.dumps({
-                                "type": "waiting-user",
-                                "client_id": client_id,
-                                "name": user_name
-                            }))
-                    
-                    await websocket.send_text(json.dumps({
+
+                    logging.info(f"Guest '{user_name}' ({client_id}) entered waiting room for {room_id}")
+
+                    # Notify host if present
+                    host_id = room_hosts.get(room_id)
+                    if host_id and host_id in rooms.get(room_id, {}):
+                        await safe_send(rooms[room_id][host_id], {
+                            "type": "waiting-user",
+                            "client_id": client_id,
+                            "name": user_name
+                        })
+
+                    await safe_send(websocket, {
                         "type": "waiting",
                         "message": "You are in the waiting room. Please wait for the host to approve."
-                    }))
-                    continue
+                    })
 
-            elif msg_type == "approve":
-                if client_id == room_hosts.get(room_id):
-                    target_client_id = msg.get("target_client_id")
-                    waiting_room[room_id] = [
-                        w for w in waiting_room.get(room_id, [])
-                        if w["client_id"] != target_client_id
-                    ]
-                    
-                    for wait_entry in waiting_room.get(room_id, []):
-                        if wait_entry["client_id"] == target_client_id:
-                            try:
-                                await wait_entry["ws"].send_text(json.dumps({
-                                    "type": "approved",
-                                    "from": client_id,
-                                    "message": "You have been approved to join the meeting."
-                                }))
-                            except Exception:
-                                pass
-                            
-                            rooms[room_id][target_client_id] = wait_entry["ws"]
-                            await wait_entry["ws"].send_text(json.dumps({
-                                "type": "user-joined",
-                                "id": target_client_id,
-                                "name": wait_entry["name"]
-                            }))
-                            break
-                    
-                    for other_id, other_ws in rooms[room_id].items():
-                        if other_id != target_client_id:
-                            try:
-                                await other_ws.send_text(json.dumps({
-                                    "type": "user-joined",
-                                    "id": target_client_id,
-                                    "name": msg.get("target_name", "Guest")
-                                }))
-                            except Exception:
-                                pass
-                
-                continue
+                continue  # Done handling join
 
-            elif msg_type == "deny":
-                if client_id == room_hosts.get(room_id):
-                    target_client_id = msg.get("target_client_id")
-                    waiting_room[room_id] = [
-                        w for w in waiting_room.get(room_id, [])
-                        if w["client_id"] != target_client_id
-                    ]
-                    
-                    for wait_entry in waiting_room.get(room_id, []):
-                        if wait_entry["client_id"] == target_client_id:
-                            try:
-                                await wait_entry["ws"].send_text(json.dumps({
-                                    "type": "denied",
-                                    "message": "You have been denied entry to the meeting."
-                                }))
-                                await wait_entry["ws"].close()
-                            except Exception:
-                                pass
-                            break
-                
-                continue
-
-            elif msg_type == "remove":
-                if client_id == room_hosts.get(room_id):
-                    target_client_id = msg.get("target_client_id")
-                    
-                    if target_client_id in rooms[room_id]:
-                        target_ws = rooms[room_id][target_client_id]
-                        try:
-                            await target_ws.send_text(json.dumps({
-                                "type": "removed",
-                                "message": "You have been removed from the meeting."
-                            }))
-                            await target_ws.close()
-                        except Exception:
-                            pass
-                        del rooms[room_id][target_client_id]
-                    
-                    for other_id, other_ws in rooms[room_id].items():
-                        try:
-                            await other_ws.send_text(json.dumps({
-                                "type": "user-left",
-                                "id": target_client_id
-                            }))
-                        except Exception:
-                            pass
-                
-                continue
-
+            # ══════════════════════════════════
+            #  Block waiting-room users from
+            #  sending anything else
+            # ══════════════════════════════════
             if is_in_waiting:
-                await websocket.send_text(json.dumps({
+                await safe_send(websocket, {
                     "type": "waiting",
                     "message": "You are in the waiting room. Please wait for approval."
-                }))
+                })
                 continue
 
-            if msg_type in ["offer", "answer", "candidate", "ice-candidate"]:
-                recipient_id = msg.get("to")
-                if recipient_id and recipient_id in rooms.get(room_id, {}):
-                    await rooms[room_id][recipient_id].send_text(data)
+            # ══════════════════════════════════
+            #  APPROVE (host only)
+            # ══════════════════════════════════
+            if msg_type == "approve":
+                if client_id != room_hosts.get(room_id):
+                    continue
+
+                target_id = msg.get("target_client_id")
+
+                # FIX: find the entry BEFORE removing it from waiting list
+                target_entry = next(
+                    (w for w in waiting_rooms.get(room_id, []) if w["client_id"] == target_id),
+                    None
+                )
+
+                # Remove from waiting list
+                waiting_rooms[room_id] = [
+                    w for w in waiting_rooms.get(room_id, [])
+                    if w["client_id"] != target_id
+                ]
+
+                if target_entry:
+                    target_ws   = target_entry["ws"]
+                    target_name = target_entry["name"]
+
+                    # Add to active room
+                    rooms[room_id][target_id] = target_ws
+                    participant_names[room_id][target_id] = target_name
+
+                    # Tell the approved user they can proceed
+                    await safe_send(target_ws, {
+                        "type": "approved",
+                        "message": "You have been approved to join the meeting."
+                    })
+
+                    # Tell everyone (including host) that this user joined
+                    await broadcast_to_room(room_id, {
+                        "type": "user-joined",
+                        "id": target_id,
+                        "name": target_name
+                    })
+
+                    # Tell the newly-admitted user about everyone else
+                    for other_id in list(rooms[room_id].keys()):
+                        if other_id != target_id:
+                            other_name = participant_names[room_id].get(other_id, "Participant")
+                            await safe_send(target_ws, {
+                                "type": "user-joined",
+                                "id": other_id,
+                                "name": other_name
+                            })
+
+                    logging.info(f"Host approved '{target_name}' ({target_id}) into room {room_id}")
+
                 continue
 
-            elif msg_type == "chat-message":
-                for other_id, other_ws in rooms.get(room_id, {}).items():
-                    if other_id != client_id:
-                        try:
-                            await other_ws.send_text(data)
-                        except Exception:
-                            pass
-                continue
+            # ══════════════════════════════════
+            #  DENY (host only)
+            # ══════════════════════════════════
+            if msg_type == "deny":
+                if client_id != room_hosts.get(room_id):
+                    continue
 
-            elif msg_type == "audio-toggle":
-                rooms[room_id][client_id] = websocket
-                for other_id, other_ws in rooms[room_id].items():
-                    if other_id != client_id:
-                        try:
-                            await other_ws.send_text(data)
-                        except Exception:
-                            pass
-                continue
+                target_id = msg.get("target_client_id")
+                target_entry = next(
+                    (w for w in waiting_rooms.get(room_id, []) if w["client_id"] == target_id),
+                    None
+                )
 
-            elif msg_type == "video-toggle":
-                rooms[room_id][client_id] = websocket
-                for other_id, other_ws in rooms[room_id].items():
-                    if other_id != client_id:
-                        try:
-                            await other_ws.send_text(data)
-                        except Exception:
-                            pass
-                continue
+                waiting_rooms[room_id] = [
+                    w for w in waiting_rooms.get(room_id, [])
+                    if w["client_id"] != target_id
+                ]
 
-            if not is_in_waiting and client_id:
-                rooms[room_id][client_id] = websocket
-                
-                if msg_type == "join":
-                    for other_id in rooms[room_id].keys():
-                        if other_id != client_id:
-                            try:
-                                await websocket.send_text(json.dumps({
-                                    "type": "user-joined",
-                                    "id": other_id,
-                                    "name": "Participant"
-                                }))
-                                await rooms[room_id][other_id].send_text(json.dumps({
-                                    "type": "user-joined",
-                                    "id": client_id,
-                                    "name": user_name,
-                                    "is_host": is_host
-                                }))
-                            except Exception:
-                                pass
-
-    except WebSocketDisconnect:
-        logging.info(f"User {client_id} disconnected from room {room_id}")
-        
-        if is_in_waiting:
-            waiting_room[room_id] = [
-                w for w in waiting_room.get(room_id, [])
-                if w["client_id"] != client_id
-            ]
-            if room_id in room_hosts:
-                host_ws = rooms[room_id].get(room_hosts[room_id])
-                if host_ws:
-                    await host_ws.send_text(json.dumps({
-                        "type": "waiting-user-left",
-                        "client_id": client_id
-                    }))
-        else:
-            if client_id in rooms.get(room_id, {}):
-                del rooms[room_id][client_id]
-                
-                for other_id, other_ws in rooms.get(room_id, {}).items():
+                if target_entry:
+                    await safe_send(target_entry["ws"], {
+                        "type": "denied",
+                        "message": "You have been denied entry to the meeting."
+                    })
                     try:
-                        await other_ws.send_text(json.dumps({
-                            "type": "user-left",
-                            "id": client_id
-                        }))
+                        await target_entry["ws"].close()
                     except Exception:
                         pass
-                
-                if room_hosts.get(room_id) == client_id:
-                    del room_hosts[room_id]
-                    for wait_entry in waiting_room.get(room_id, []):
-                        try:
-                            await wait_entry["ws"].send_text(json.dumps({
-                                "type": "host-left",
-                                "message": "The host has left the meeting. All participants will be disconnected."
-                            }))
-                            await wait_entry["ws"].close()
-                        except Exception:
-                            pass
-                    waiting_room[room_id] = []
-                    
-                    for remaining_id, remaining_ws in list(rooms.get(room_id, {}).items()):
-                        try:
-                            await remaining_ws.send_text(json.dumps({
-                                "type": "host-left",
-                                "message": "The host has left the meeting."
-                            }))
-                            await remaining_ws.close()
-                        except Exception:
-                            pass
-                    rooms[room_id] = {}
 
-                if room_id in rooms and not rooms[room_id] and not waiting_room.get(room_id):
-                    del rooms[room_id]
-                    logging.info(f"Room {room_id} deleted")
+                continue
+
+            # ══════════════════════════════════
+            #  REMOVE participant (host only)
+            # ══════════════════════════════════
+            if msg_type == "remove":
+                if client_id != room_hosts.get(room_id):
+                    continue
+
+                target_id = msg.get("target_client_id")
+                target_ws = rooms.get(room_id, {}).pop(target_id, None)
+                participant_names.get(room_id, {}).pop(target_id, None)
+
+                if target_ws:
+                    await safe_send(target_ws, {
+                        "type": "removed",
+                        "message": "You have been removed from the meeting."
+                    })
+                    try:
+                        await target_ws.close()
+                    except Exception:
+                        pass
+
+                # Notify remaining participants
+                await broadcast_to_room(room_id, {
+                    "type": "user-left",
+                    "id": target_id
+                })
+
+                continue
+
+            # ══════════════════════════════════
+            #  WebRTC signalling (targeted)
+            # ══════════════════════════════════
+            if msg_type in ("offer", "answer", "candidate", "ice-candidate"):
+                recipient_id = msg.get("to")
+                if recipient_id:
+                    recipient_ws = rooms.get(room_id, {}).get(recipient_id)
+                    if recipient_ws:
+                        await safe_send(recipient_ws, msg)
+                    else:
+                        logging.warning(
+                            f"Signal '{msg_type}' from {client_id} "
+                            f"to unknown recipient {recipient_id} in room {room_id}"
+                        )
+                continue
+
+            # ══════════════════════════════════
+            #  CHAT message (broadcast)
+            # ══════════════════════════════════
+            if msg_type == "chat-message":
+                await broadcast_to_room(room_id, msg, exclude_id=client_id)
+                continue
+
+            # ══════════════════════════════════
+            #  AUDIO / VIDEO toggle (broadcast)
+            # ══════════════════════════════════
+            if msg_type in ("audio-toggle", "video-toggle"):
+                await broadcast_to_room(room_id, msg, exclude_id=client_id)
+                continue
+
+            # ══════════════════════════════════
+            #  Unhandled — log and ignore
+            # ══════════════════════════════════
+            logging.warning(f"Unhandled message type '{msg_type}' from {client_id} in room {room_id}")
+
+    # ── Disconnect ────────────────────────────
+    except WebSocketDisconnect:
+        logging.info(f"Client '{user_name}' ({client_id}) disconnected from room {room_id}")
 
     except Exception as e:
-        logging.error(f"WebSocket error in room {room_id}: {e}")
+        logging.error(f"WebSocket error for {client_id} in room {room_id}: {e}", exc_info=True)
 
+    finally:
+        ping_task.cancel()
+
+        if is_in_waiting:
+            # Remove from waiting room
+            waiting_rooms[room_id] = [
+                w for w in waiting_rooms.get(room_id, [])
+                if w["client_id"] != client_id
+            ]
+            # Notify host
+            host_id = room_hosts.get(room_id)
+            if host_id and host_id in rooms.get(room_id, {}):
+                await safe_send(rooms[room_id][host_id], {
+                    "type": "waiting-user-left",
+                    "client_id": client_id
+                })
+        else:
+            # Remove from active room
+            rooms.get(room_id, {}).pop(client_id, None)
+            participant_names.get(room_id, {}).pop(client_id, None)
+
+            # Notify remaining participants
+            if rooms.get(room_id):
+                await broadcast_to_room(room_id, {
+                    "type": "user-left",
+                    "id": client_id
+                })
+
+            # Handle host disconnect
+            if room_hosts.get(room_id) == client_id:
+                logging.info(f"Host left room {room_id} — closing room")
+                del room_hosts[room_id]
+
+                # Notify and close all waiting users
+                for entry in waiting_rooms.get(room_id, []):
+                    await safe_send(entry["ws"], {
+                        "type": "host-left",
+                        "message": "The host has left. The meeting is now closed."
+                    })
+                    try:
+                        await entry["ws"].close()
+                    except Exception:
+                        pass
+                waiting_rooms[room_id] = []
+
+                # Notify and close remaining participants
+                for _, ws in list(rooms.get(room_id, {}).items()):
+                    await safe_send(ws, {
+                        "type": "host-left",
+                        "message": "The host has left. The meeting is now closed."
+                    })
+                    try:
+                        await ws.close()
+                    except Exception:
+                        pass
+                rooms[room_id] = {}
+
+            # Clean up empty rooms
+            if (
+                room_id in rooms
+                and not rooms[room_id]
+                and not waiting_rooms.get(room_id)
+            ):
+                rooms.pop(room_id, None)
+                waiting_rooms.pop(room_id, None)
+                participant_names.pop(room_id, None)
+                logging.info(f"Room {room_id} cleaned up")
+
+
+# ─────────────────────────────────────────────
+#  Guest WebSocket registration endpoint
+# ─────────────────────────────────────────────
+
+@router.websocket("/ws-guest/{room_id}")
+async def websocket_guest_endpoint(websocket: WebSocket, room_id: str):
+    await websocket.accept()
+    try:
+        raw  = await websocket.receive_text()
+        msg  = json.loads(raw)
+
+        if msg.get("type") == "register":
+            name            = msg.get("name", "Guest")
+            is_host_request = msg.get("is_host", False)
+
+            session_id, guest_token = guest_session_manager.create_guest_session(
+                room_id=room_id,
+                name=name,
+                user_id=None,
+                is_host=is_host_request
+            )
+
+            await websocket.send_json({
+                "type":       "registered",
+                "session_id": session_id,
+                "guest_token": guest_token,
+                "name":       name
+            })
+    except Exception as e:
+        logging.error(f"ws-guest error: {e}")
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+
+
+# ─────────────────────────────────────────────
+#  Remaining REST endpoints (unchanged)
+# ─────────────────────────────────────────────
 
 @router.get("/meetings")
 def get_meetings_by_date(
@@ -663,10 +802,9 @@ def get_meetings_by_date(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    target_date = datetime.strptime(date, "%Y-%m-%d")
-    
+    target_date  = datetime.strptime(date, "%Y-%m-%d")
     start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
-    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
+    end_of_day   = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
 
     meetings = db.query(Meeting).filter(
         Meeting.owner_id == current_user.id,
@@ -674,10 +812,7 @@ def get_meetings_by_date(
         Meeting.scheduled_start <= end_of_day
     ).all()
 
-    return {
-        "date": date,
-        "meetings": [meeting_to_dict(m) for m in meetings]
-    }
+    return {"date": date, "meetings": [meeting_to_dict(m) for m in meetings]}
 
 
 @router.get("/user/{user_id}")
@@ -687,15 +822,9 @@ def get_user_by_id(
     current_user = Depends(get_current_user)
 ):
     user = db.query(User).filter(User.id == user_id).first()
-
     if not user:
         return {"error": "User not found"}
-
-    return {
-        "id": user.id,
-        "name": user.name,
-        "email": user.email
-    }
+    return {"id": user.id, "name": user.name, "email": user.email}
 
 
 @router.get("/meetings/by-month")
@@ -706,10 +835,8 @@ def get_meetings_by_month(
     current_user = Depends(get_current_user)
 ):
     start_date = datetime(year, month, 1, tzinfo=timezone.utc)
-    if month == 12:
-        end_date = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
-    else:
-        end_date = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    end_date   = datetime(year + 1, 1, 1, tzinfo=timezone.utc) if month == 12 \
+                 else datetime(year, month + 1, 1, tzinfo=timezone.utc)
 
     meetings = db.query(Meeting).filter(
         Meeting.owner_id == current_user.id,
@@ -718,7 +845,7 @@ def get_meetings_by_month(
     ).all()
 
     return {
-        "dates": [m.scheduled_start.strftime("%Y-%m-%d") for m in meetings],
+        "dates":    [m.scheduled_start.strftime("%Y-%m-%d") for m in meetings],
         "meetings": [{"id": m.id, "date": m.scheduled_start.strftime("%Y-%m-%d")} for m in meetings]
     }
 
@@ -733,16 +860,12 @@ def get_meetings_by_month_compat(
         year, mon = map(int, month.split("-"))
     except (ValueError, AttributeError):
         return {"dates": [], "meetings": []}
-    
     return get_meetings_by_month(year, mon, db, current_user)
 
 
 @router.post("/meetings/cleanup")
-def cleanup_expired_meetings(
-    db: Session = Depends(get_db),
-):
+def cleanup_expired_meetings(db: Session = Depends(get_db)):
     from backend.scheduler.unified_scheduler import delete_expired_meetings
-    
     try:
         delete_expired_meetings()
         return {"message": "Expired meetings cleaned up successfully"}
@@ -771,7 +894,6 @@ def delete_scheduled_meeting(
 
     db.delete(meeting)
     db.commit()
-
     logging.info(f"Deleted scheduled meeting {meeting_id}")
     return {"message": "Scheduled meeting deleted successfully", "id": meeting_id}
 
@@ -781,53 +903,17 @@ def debug_get_all_meetings(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    meetings = db.query(Meeting).filter(
-        Meeting.owner_id == current_user.id
-    ).all()
-    
+    meetings = db.query(Meeting).filter(Meeting.owner_id == current_user.id).all()
     return {
         "meetings": [
             {
-                "id": m.id,
-                "title": m.title,
-                "scheduled_start_raw": str(m.scheduled_start),
-                "scheduled_start_date": m.scheduled_start.strftime("%Y-%m-%d") if m.scheduled_start else None,
-                "scheduled_start_iso": m.scheduled_start.isoformat() if m.scheduled_start else None,
-                "meeting_type": m.meeting_type,
+                "id":                    m.id,
+                "title":                 m.title,
+                "scheduled_start_raw":   str(m.scheduled_start),
+                "scheduled_start_date":  m.scheduled_start.strftime("%Y-%m-%d") if m.scheduled_start else None,
+                "scheduled_start_iso":   m.scheduled_start.isoformat() if m.scheduled_start else None,
+                "meeting_type":          m.meeting_type,
             }
             for m in meetings
         ]
     }
-
-
-@router.websocket("/ws-guest/{room_id}")
-async def websocket_guest_endpoint(websocket: WebSocket, room_id: str):
-    await websocket.accept()
-    
-    try:
-        data = await websocket.receive_text()
-        msg = json.loads(data)
-        
-        if msg.get("type") == "register":
-            name = msg.get("name", "Guest")
-            is_host_request = msg.get("is_host", False)
-            
-            session_id, guest_token = guest_session_manager.create_guest_session(
-                room_id=room_id,
-                name=name,
-                user_id=None,
-                is_host=is_host_request
-            )
-            
-            await websocket.send_json({
-                "type": "registered",
-                "session_id": session_id,
-                "guest_token": guest_token,
-                "name": name
-            })
-    except Exception as e:
-        await websocket.send_json({
-            "type": "error",
-            "message": str(e)
-        })
-
