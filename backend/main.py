@@ -160,13 +160,13 @@ app.include_router(meetings_router, tags=["Meetings"])
 app.include_router(stt_router.router, tags=["Speech-to-Text"])
 app.include_router(notes_router, tags=["Notes"])
 
-# --- WebSocket for WebRTC signaling ---
-@app.websocket("/ws/{room_id}")
-async def websocket_endpoint(websocket: WebSocket, room_id: str):
-    await manager.connect(websocket, room_id)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            await manager.broadcast(data, room_id, websocket)
-    except WebSocketDisconnect:
-        manager.disconnect(websocket, room_id)
+# # --- WebSocket for WebRTC signaling ---
+# @app.websocket("/ws/{room_id}")
+# async def websocket_endpoint(websocket: WebSocket, room_id: str):
+#     await manager.connect(websocket, room_id)
+#     try:
+#         while True:
+#             data = await websocket.receive_text()
+#             await manager.broadcast(data, room_id, websocket)
+#     except WebSocketDisconnect:
+#         manager.disconnect(websocket, room_id)
