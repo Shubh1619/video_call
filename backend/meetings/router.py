@@ -130,7 +130,7 @@ def create_instant_meeting(
 ):
     auth_header = request.headers.get("Authorization", "")
     token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
-    
+
     current_user = None
     if token:
         try:
@@ -144,15 +144,18 @@ def create_instant_meeting(
     now = datetime.now(timezone.utc)
     end_dt = now + timedelta(hours=1)
     room_id = str(uuid.uuid4())[:8]
+
+    # ✅ Always use latest domain
     join_link = f"{MY_DOMAIN}/meeting/{room_id}"
 
+    # ✅ Cleaner host handling
     if current_user:
         owner_id = current_user.id
         organizer_email = current_user.email
         host_display_name = current_user.name or current_user.email
     else:
         owner_id = None
-        organizer_email = "guest@meetify"
+        organizer_email = host_name or "guest@meetify"
         host_display_name = host_name or "Guest Host"
 
     meeting = Meeting(
@@ -182,7 +185,10 @@ def create_instant_meeting(
         is_host=True
     )
 
-    if participants and organizer_email != "guest@meetify":
+    # 🔥 FIX: Always send email if participants exist
+    if participants:
+        print("📧 Sending instant meeting email to:", participants)
+
         background_tasks.add_task(
             send_instant_invitation_emails,
             recipients=participants,
@@ -202,7 +208,6 @@ def create_instant_meeting(
         "host_session_id": session_id,
         "host_guest_token": guest_token
     }
-
 
 @router.get("/meeting/{room_id}")
 def get_meeting_info(room_id: str, db: Session = Depends(get_db)):
