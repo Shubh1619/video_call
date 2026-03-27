@@ -27,8 +27,9 @@ MAIL_CONFIG = {
     "MAIL_SERVER": os.getenv("MAIL_SERVER"),
     "MAIL_STARTTLS": os.getenv("MAIL_STARTTLS", "True").lower() == "true",
     "MAIL_SSL_TLS": os.getenv("MAIL_SSL_TLS", "False").lower() == "true",
-    "MAIL_FROM_NAME": os.getenv("MAIL_FROM_NAME", "AI Meeting Assistant"),
+    "MAIL_FROM_NAME": os.getenv("MAIL_FROM_NAME", "Meeting"),
     "USE_CREDENTIALS": os.getenv("USE_CREDENTIALS", "True").lower() == "true",
+    "BREVO_API_KEY": os.getenv("BREVO_API_KEY"),
 }
 
 # -----------------------------
