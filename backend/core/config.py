@@ -1,15 +1,47 @@
-import os
+﻿import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # -----------------------------
+# RAW ENV HELPERS
+# -----------------------------
+_cors_origins_raw = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080",
+)
+
+# -----------------------------
 # DOMAIN CONFIGURATION
 # -----------------------------
-MY_DOMAIN = os.getenv("MY_DOMAIN")
+MY_DOMAIN = (os.getenv("MY_DOMAIN") or "").strip().rstrip("/")
 
 if not MY_DOMAIN:
-    raise ValueError("❌ MY_DOMAIN not set in .env")
+    raise ValueError("MY_DOMAIN not set in .env")
+
+# In Render, never keep localhost as the public meeting domain.
+if os.getenv("RENDER") and ("localhost" in MY_DOMAIN or "127.0.0.1" in MY_DOMAIN):
+    fallback_candidates = [
+        (os.getenv("PUBLIC_FRONTEND_URL") or "").strip().rstrip("/"),
+        (os.getenv("FRONTEND_URL") or "").strip().rstrip("/"),
+    ]
+    fallback_candidates += [
+        origin.strip().rstrip("/")
+        for origin in _cors_origins_raw.split(",")
+        if origin.strip().startswith("https://")
+        and "localhost" not in origin
+        and "127.0.0.1" not in origin
+    ]
+    fallback_candidates = [c for c in fallback_candidates if c]
+
+    if not fallback_candidates:
+        raise ValueError(
+            "MY_DOMAIN is localhost on Render and no hosted fallback was found. "
+            "Set MY_DOMAIN to your hosted frontend URL."
+        )
+
+    MY_DOMAIN = fallback_candidates[0]
+    print(f"MY_DOMAIN was localhost on Render. Using hosted fallback: {MY_DOMAIN}")
 
 # -----------------------------
 # DATABASE CONFIGURATION
@@ -48,10 +80,7 @@ RATE_LIMIT_STRICT_PER_MINUTE = int(os.getenv("RATE_LIMIT_STRICT_PER_MINUTE", "5"
 # -----------------------------
 # CORS CONFIGURATION (REQUIRED)
 # -----------------------------
-CORS_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080"
-).split(",")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", _cors_origins_raw).split(",")
 
 # -----------------------------
 # SECRET KEY (STRICT SECURITY)
@@ -59,10 +88,10 @@ CORS_ORIGINS = os.getenv(
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 if not SECRET_KEY:
-    raise ValueError("❌ SECRET_KEY not set")
+    raise ValueError("SECRET_KEY not set")
 
 if len(SECRET_KEY) < 32:
-    raise ValueError("❌ SECRET_KEY must be at least 32 characters")
+    raise ValueError("SECRET_KEY must be at least 32 characters")
 
 # -----------------------------
 # JWT SECRET
@@ -72,8 +101,8 @@ JWT_SECRET = os.getenv("JWT_SECRET", SECRET_KEY)
 # -----------------------------
 # DEBUG PRINTS (HELPFUL)
 # -----------------------------
-print("✅ Config loaded successfully")
-print(f"🌐 DOMAIN: {MY_DOMAIN}")
-print(f"📧 MAIL: {MAIL_CONFIG['MAIL_USERNAME']}")
-print(f"🔒 REDIS ENABLED: {REDIS_ENABLED}")
-print(f"🌍 CORS: {CORS_ORIGINS}")
+print("Config loaded successfully")
+print(f"DOMAIN: {MY_DOMAIN}")
+print(f"MAIL: {MAIL_CONFIG['MAIL_USERNAME']}")
+print(f"REDIS ENABLED: {REDIS_ENABLED}")
+print(f"CORS: {CORS_ORIGINS}")
