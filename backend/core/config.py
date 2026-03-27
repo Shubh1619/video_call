@@ -14,32 +14,27 @@ _cors_origins_raw = os.getenv(
 # -----------------------------
 # DOMAIN CONFIGURATION
 # -----------------------------
+DEFAULT_HOSTED_FRONTEND = "https://meet-frontend-4op.pages.dev"
 MY_DOMAIN = (os.getenv("MY_DOMAIN") or "").strip().rstrip("/")
 
+fallback_candidates = [
+    (os.getenv("PUBLIC_FRONTEND_URL") or "").strip().rstrip("/"),
+    (os.getenv("FRONTEND_URL") or "").strip().rstrip("/"),
+]
+fallback_candidates += [
+    origin.strip().rstrip("/")
+    for origin in _cors_origins_raw.split(",")
+    if origin.strip().startswith("https://")
+    and "localhost" not in origin
+    and "127.0.0.1" not in origin
+]
+fallback_candidates.append(DEFAULT_HOSTED_FRONTEND)
+fallback_candidates = [c for c in fallback_candidates if c]
+
 if not MY_DOMAIN:
-    raise ValueError("MY_DOMAIN not set in .env")
-
-# In Render, never keep localhost as the public meeting domain.
-if os.getenv("RENDER") and ("localhost" in MY_DOMAIN or "127.0.0.1" in MY_DOMAIN):
-    fallback_candidates = [
-        (os.getenv("PUBLIC_FRONTEND_URL") or "").strip().rstrip("/"),
-        (os.getenv("FRONTEND_URL") or "").strip().rstrip("/"),
-    ]
-    fallback_candidates += [
-        origin.strip().rstrip("/")
-        for origin in _cors_origins_raw.split(",")
-        if origin.strip().startswith("https://")
-        and "localhost" not in origin
-        and "127.0.0.1" not in origin
-    ]
-    fallback_candidates = [c for c in fallback_candidates if c]
-
-    if not fallback_candidates:
-        raise ValueError(
-            "MY_DOMAIN is localhost on Render and no hosted fallback was found. "
-            "Set MY_DOMAIN to your hosted frontend URL."
-        )
-
+    MY_DOMAIN = fallback_candidates[0]
+    print(f"MY_DOMAIN not set. Using fallback: {MY_DOMAIN}")
+elif os.getenv("RENDER") and ("localhost" in MY_DOMAIN or "127.0.0.1" in MY_DOMAIN):
     MY_DOMAIN = fallback_candidates[0]
     print(f"MY_DOMAIN was localhost on Render. Using hosted fallback: {MY_DOMAIN}")
 
