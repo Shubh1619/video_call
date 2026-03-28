@@ -724,12 +724,19 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             # ══════════════════════════════════
             #  WebRTC signalling (targeted)
             # ══════════════════════════════════
-            if msg_type in ("offer", "answer", "candidate", "ice-candidate"):
+            if msg_type in ("offer", "answer", "candidate"):
                 recipient_id = msg.get("to")
                 if recipient_id:
                     recipient_ws = rooms.get(room_id, {}).get(recipient_id)
                     if recipient_ws:
-                        await safe_send(recipient_ws, msg)
+                        msg["from"] = client_id   # 🔥 ADD THIS LINE
+                        await safe_send(recipient_ws, {
+                                        "type": msg_type,
+                                        "from": client_id,      # 🔥 VERY IMPORTANT
+                                        "to": recipient_id,
+                                        "sdp": msg.get("sdp"),
+                                        "candidate": msg.get("candidate")
+                                    })
                     else:
                         logging.warning(
                             f"Signal '{msg_type}' from {client_id} "
