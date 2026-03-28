@@ -7,11 +7,12 @@ from backend.models.user import Base  # Only import Base from user.py
 # SSL CA certificate
 ssl_ca_path = os.getenv("TIDB_SSL_CA_PATH", os.path.join(os.path.dirname(__file__), "isrgrootx1.pem"))
 
-# SQLAlchemy engine
 engine = create_engine(
     DATABASE_URL,
-    # connect_args={"ssl": {"ca": ssl_ca_path}},
-    pool_pre_ping=True,  # avoids stale connections
+    pool_size=5,          # max 5 persistent connections
+    max_overflow=10,      # extra temporary connections
+    pool_timeout=30,      # wait before failing
+    pool_pre_ping=True,   # keep connections alive
 )
 
 # Session factory

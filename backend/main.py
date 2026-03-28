@@ -77,8 +77,8 @@ async def on_shutdown():
     print("✓ Application shutdown complete")
 
 # --- Health Check Endpoint ---
-@app.get("/health", tags=["Health"])
-async def health_check():
+@app.get("/health/full")
+async def full_health_check():
     """Check application health status."""
     try:
         with engine.connect() as conn:
@@ -101,6 +101,12 @@ async def health_check():
             }
         }
     })
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy"
+    }
 
 # --- Database Migration Endpoint ---
 @app.post("/migrate", tags=["Admin"])
