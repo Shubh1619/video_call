@@ -105,7 +105,9 @@ def schedule_meeting(
             agenda=agenda,
             start_dt=start_dt
         )
-        schedule_meeting_reminder(meeting.id, start_dt, participants)
+
+    # Always schedule reminder for owner + attendee_emails from DB.
+    schedule_meeting_reminder(meeting.id, start_dt, participants)
 
     return {
         "msg": "Scheduled meeting created.",

@@ -18,7 +18,7 @@ from backend.notes.routes import router as notes_router
 from backend.routers import stt as stt_router
 from backend.services.stt_service import SttService
 from backend.core.rate_limit import limiter
-from backend.core.config import CORS_ORIGINS, REDIS_ENABLED
+from backend.core.config import CORS_ORIGINS, REDIS_ENABLED, SCHEDULER_ENABLED
 
 # WebSocket manager for signaling
 class ConnectionManager:
@@ -70,12 +70,16 @@ app.add_middleware(
 async def on_startup():
     init_db()
     app.state.stt_service = SttService()
-    start_all_schedulers()
+    if SCHEDULER_ENABLED:
+        start_all_schedulers()
+    else:
+        print("Scheduler disabled on this instance (SCHEDULER_ENABLED=false)")
     print("✓ Application started successfully")
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    shutdown_all_schedulers()
+    if SCHEDULER_ENABLED:
+        shutdown_all_schedulers()
     print("✓ Application shutdown complete")
 
 # --- Health Check Endpoint ---
@@ -98,6 +102,7 @@ async def full_health_check():
             "database": db_status,
             "redis": "enabled" if REDIS_ENABLED else "disabled",
             "scheduler": {
+                "enabled": SCHEDULER_ENABLED,
                 "running": scheduler_status.get("running", False),
                 "jobs_count": len(scheduler_status.get("jobs", []))
             }
@@ -178,3 +183,5 @@ app.include_router(notes_router, tags=["Notes"])
 #             await manager.broadcast(data, room_id, websocket)
 #     except WebSocketDisconnect:
 #         manager.disconnect(websocket, room_id)
+
+

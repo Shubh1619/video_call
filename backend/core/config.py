@@ -66,6 +66,11 @@ REDIS_URL = os.getenv("REDIS_URL")
 REDIS_ENABLED = REDIS_URL is not None
 
 # -----------------------------
+# SCHEDULER CONFIGURATION
+# -----------------------------
+SCHEDULER_ENABLED = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
+
+# -----------------------------
 # RATE LIMIT CONFIGURATION
 # -----------------------------
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
