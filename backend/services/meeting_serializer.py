@@ -17,11 +17,16 @@ def serialize_meeting(meeting, now_utc: datetime | None = None, role: str | None
     end_dt = ensure_utc(getattr(meeting, "scheduled_end", None))
     local_start = to_app_timezone(start_dt)
     local_end = to_app_timezone(end_dt)
-    is_upcoming, is_live, status = compute_meeting_flags(start_dt, end_dt, now_utc)
+    is_upcoming, is_live, computed_status = compute_meeting_flags(start_dt, end_dt, now_utc)
 
     owner = getattr(meeting, "owner", None)
     owner_name = owner.name if owner and getattr(owner, "name", None) else None
     owner_email = owner.email if owner and getattr(owner, "email", None) else None
+
+    meeting_type = getattr(meeting, "meeting_type", None)
+    normalized_type = "scheduled" if meeting_type == "regular" else meeting_type
+    stored_status = getattr(meeting, "status", None)
+    status = stored_status or computed_status
 
     return {
         "id": meeting.id,
@@ -32,20 +37,20 @@ def serialize_meeting(meeting, now_utc: datetime | None = None, role: str | None
         "scheduled_end": end_dt.isoformat() if end_dt else None,
         "local_start": local_start.isoformat() if local_start else None,
         "local_end": local_end.isoformat() if local_end else None,
-        "meeting_timezone": APP_TIMEZONE_NAME,
+        "meeting_timezone": getattr(meeting, "meeting_timezone", None) or APP_TIMEZONE_NAME,
         "status": status,
         "is_live": is_live,
         "is_upcoming": is_upcoming,
         "time": local_start.strftime("%I:%M %p") if local_start else None,
         "room_id": getattr(meeting, "room_id", None),
         "meeting_link": getattr(meeting, "meeting_link", None),
-        "meeting_type": getattr(meeting, "meeting_type", None),
+        "meeting_type": normalized_type,
         "owner_id": getattr(meeting, "owner_id", None),
         "owner_name": owner_name,
         "owner_email": owner_email,
         "role": role,
         "can_delete": bool(
-            getattr(meeting, "meeting_type", None) == "regular"
+            normalized_type == "scheduled"
             and role == "owner"
         ),
     }

@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.auth.utils import get_current_user
@@ -34,7 +35,7 @@ def delete_scheduled_meeting(
         .filter(
             Meeting.id == meeting_id,
             Meeting.owner_id == current_user.id,
-            Meeting.meeting_type == "regular",
+            or_(Meeting.meeting_type == "scheduled", Meeting.meeting_type == "regular"),
         )
         .first()
     )

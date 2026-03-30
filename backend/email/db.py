@@ -2,7 +2,10 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend.core.config import DATABASE_URL
-from backend.models.user import Base  # Only import Base from user.py
+from backend.models.user import Base
+from backend.models.meeting import Meeting  # noqa: F401
+from backend.models.participant import Participant  # noqa: F401
+from backend.models.notes import Note  # noqa: F401
 
 # SSL CA certificate
 ssl_ca_path = os.getenv("TIDB_SSL_CA_PATH", os.path.join(os.path.dirname(__file__), "isrgrootx1.pem"))

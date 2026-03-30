@@ -15,6 +15,7 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy.orm import joinedload
 
 from backend.core.config import DATABASE_URL
 from backend.email.db import SessionLocal
@@ -121,16 +122,20 @@ def schedule_meeting_reminder(meeting_id: int, start_dt, recipients: list | None
 
 def _resolve_meeting_recipients(meeting: Meeting, provided_recipients: list | None = None) -> list[str]:
     owner_email = meeting.owner.email if meeting.owner and meeting.owner.email else None
-    attendee_emails = meeting.attendee_emails or []
+    participant_emails = [
+        p.email for p in getattr(meeting, "participants", []) if getattr(p, "email", None)
+    ]
     combined = []
     if owner_email:
         combined.append(owner_email)
-    combined.extend(attendee_emails)
+    combined.extend(participant_emails)
     if provided_recipients:
         combined.extend(provided_recipients)
 
     # Preserve order while removing empty/duplicate values
-    unique = list(dict.fromkeys(email.strip() for email in combined if isinstance(email, str) and email.strip()))
+    unique = list(
+        dict.fromkeys(email.strip().lower() for email in combined if isinstance(email, str) and email.strip())
+    )
     return unique
 
 
@@ -138,7 +143,12 @@ def send_meeting_reminder_job(meeting_id: int, recipients: list | None = None, r
     """Background job to send meeting reminder email."""
     try:
         with SessionLocal() as db:
-            meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+            meeting = (
+                db.query(Meeting)
+                .options(joinedload(Meeting.owner), joinedload(Meeting.participants))
+                .filter(Meeting.id == meeting_id)
+                .first()
+            )
             if not meeting:
                 logger.warning(f"Meeting {meeting_id} not found for reminder")
                 return
@@ -252,7 +262,7 @@ def delete_expired_meetings():
             ).all()
 
             scheduled_expired = db.query(Meeting).filter(
-                Meeting.meeting_type == "regular",
+                Meeting.meeting_type.in_(["regular", "scheduled"]),
                 Meeting.scheduled_end <= now - timedelta(minutes=30),
             ).all()
 

@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.auth.utils import decode_token as decode_jwt_token
 from backend.email.db import get_db
-from backend.meetings.common import get_meeting_settings
 from backend.models.meeting import Meeting
 from backend.models.user import User
 from backend.services.guest_session import guest_session_manager
@@ -27,7 +26,6 @@ def get_meeting_info(room_id: str, db: Session = Depends(get_db)):
     if not meeting:
         return JSONResponse(status_code=404, content={"error": "Meeting not found"})
 
-    settings = get_meeting_settings(db, meeting)
     host_user = meeting.owner
 
     return {
@@ -43,11 +41,11 @@ def get_meeting_info(room_id: str, db: Session = Depends(get_db)):
             "email": host_user.email if host_user else "",
         },
         "settings": {
-            "waiting_room_enabled": settings.waiting_room_enabled,
-            "allow_guest_join": settings.allow_guest_join,
-            "max_participants": settings.max_participants,
-            "chat_enabled": settings.chat_enabled,
-            "screen_share_enabled": settings.screen_share_enabled,
+            "waiting_room_enabled": bool(meeting.waiting_room),
+            "allow_guest_join": bool(meeting.allow_guest),
+            "max_participants": 100,
+            "chat_enabled": True,
+            "screen_share_enabled": True,
         },
     }
 
@@ -62,8 +60,7 @@ def create_guest_session(
     if not meeting:
         return JSONResponse(status_code=404, content={"error": "Meeting not found"})
 
-    settings = get_meeting_settings(db, meeting)
-    if not settings.allow_guest_join:
+    if not meeting.allow_guest:
         return JSONResponse(status_code=403, content={"error": "Guest join is disabled for this meeting"})
 
     session_id, guest_token = guest_session_manager.create_guest_session(
@@ -76,7 +73,7 @@ def create_guest_session(
     return {
         "session_id": session_id,
         "guest_token": guest_token,
-        "waiting_room_enabled": settings.waiting_room_enabled,
+        "waiting_room_enabled": bool(meeting.waiting_room),
     }
 
 
@@ -105,16 +102,14 @@ def create_host_session(
             is_host=True,
         )
 
-        settings = get_meeting_settings(db, meeting)
-
         return {
             "session_id": session_id,
             "host_token": host_token,
             "host": True,
             "settings": {
-                "waiting_room_enabled": settings.waiting_room_enabled,
-                "allow_guest_join": settings.allow_guest_join,
-                "max_participants": settings.max_participants,
+                "waiting_room_enabled": bool(meeting.waiting_room),
+                "allow_guest_join": bool(meeting.allow_guest),
+                "max_participants": 100,
             },
         }
     except Exception as exc:

@@ -1,11 +1,13 @@
 ﻿from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from backend.auth.utils import get_current_user
 from backend.email.db import get_db
 from backend.models.meeting import Meeting
+from backend.models.participant import Participant
 from backend.models.user import User
 from backend.services.meeting_serializer import group_meetings_by_local_date, serialize_meeting
 from backend.services.time_service import get_utc_now, parse_date_to_utc_range, parse_month_to_utc_range
@@ -48,26 +50,23 @@ def get_dashboard_meetings(
     user_email = (current_user.email or "").strip().lower()
     now = get_utc_now()
 
-    owner_query = (
+    meetings_query = (
         db.query(Meeting)
         .options(joinedload(Meeting.owner))
-        .filter(Meeting.owner_id == current_user.id)
-    )
-    participant_query = (
-        db.query(Meeting)
-        .options(joinedload(Meeting.owner))
-        .filter(Meeting.attendee_emails.any(user_email))
+        .outerjoin(Participant, Participant.meeting_id == Meeting.id)
+        .filter(
+            or_(
+                Meeting.owner_id == current_user.id,
+                func.lower(Participant.email) == user_email,
+            )
+        )
+        .distinct(Meeting.id)
     )
 
     if upcoming_only:
-        owner_query = owner_query.filter(Meeting.scheduled_end >= now)
-        participant_query = participant_query.filter(Meeting.scheduled_end >= now)
+        meetings_query = meetings_query.filter(Meeting.scheduled_end >= now)
 
-    owner_meetings = owner_query.all()
-    participant_meetings = participant_query.all()
-
-    merged_by_id = {meeting.id: meeting for meeting in owner_meetings + participant_meetings}
-    all_meetings = list(merged_by_id.values())
+    all_meetings = meetings_query.all()
     all_meetings.sort(key=lambda meeting: meeting.scheduled_start or datetime.max.replace(tzinfo=timezone.utc))
 
     def _role_resolver(meeting: Meeting) -> str:

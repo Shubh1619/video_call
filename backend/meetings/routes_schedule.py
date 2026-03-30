@@ -9,8 +9,8 @@ from backend.auth.utils import get_current_user
 from backend.core.config import MY_DOMAIN, SECRET_KEY
 from backend.email.db import get_db
 from backend.email.utils import send_instant_invitation_emails, send_invitation_emails
-from backend.meetings.common import get_meeting_settings
 from backend.models.meeting import Meeting
+from backend.models.participant import Participant
 from backend.models.user import User
 from backend.scheduler.unified_scheduler import schedule_meeting_reminder
 from backend.services.meeting_serializer import serialize_meeting
@@ -25,6 +25,39 @@ def _normalize_emails(emails: list[str] | None) -> list[str]:
     return list(dict.fromkeys((email or "").strip().lower() for email in emails if isinstance(email, str) and email.strip()))
 
 
+def _add_meeting_participants(
+    db: Session,
+    meeting_id: int,
+    owner_user: User | None,
+    invitee_emails: list[str],
+):
+    host_email = ((owner_user.email if owner_user else None) or "").strip().lower()
+    if host_email:
+        db.add(
+            Participant(
+                meeting_id=meeting_id,
+                user_id=owner_user.id if owner_user else None,
+                email=host_email,
+                role="host",
+                status="joined",
+                joined_at=get_utc_now(),
+            )
+        )
+
+    for email in invitee_emails:
+        if email == host_email:
+            continue
+        db.add(
+            Participant(
+                meeting_id=meeting_id,
+                user_id=None,
+                email=email,
+                role="participant",
+                status="invited",
+            )
+        )
+
+
 @router.post("/schedule")
 def schedule_meeting(
     background_tasks: BackgroundTasks,
@@ -34,6 +67,7 @@ def schedule_meeting(
     end_time: str = Body(...),
     participants: list[str] = Body([]),
     waiting_room: bool = Body(False),
+    meeting_timezone: str = Body("UTC"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -50,20 +84,19 @@ def schedule_meeting(
         agenda=agenda,
         scheduled_start=start_dt,
         scheduled_end=end_dt,
-        attendee_emails=participants,
         meeting_link=join_link,
         room_id=room_id,
         owner_id=current_user.id,
-        meeting_type="regular",
+        meeting_type="scheduled",
+        meeting_timezone=meeting_timezone or "UTC",
+        waiting_room=waiting_room,
     )
 
     db.add(meeting)
+    db.flush()
+    _add_meeting_participants(db, meeting.id, current_user, participants)
     db.commit()
     db.refresh(meeting)
-
-    settings = get_meeting_settings(db, meeting)
-    settings.waiting_room_enabled = waiting_room
-    db.commit()
 
     if participants:
         background_tasks.add_task(
@@ -99,6 +132,7 @@ def create_instant_meeting(
     host_name: str = Body(None),
     participants: list[str] = Body([]),
     waiting_room: bool = Body(False),
+    meeting_timezone: str = Body("UTC"),
     db: Session = Depends(get_db),
 ):
     participants = _normalize_emails(participants)
@@ -134,20 +168,32 @@ def create_instant_meeting(
         agenda=agenda,
         scheduled_start=now,
         scheduled_end=end_dt,
-        attendee_emails=participants,
         meeting_link=join_link,
         room_id=room_id,
         owner_id=owner_id,
         meeting_type="instant",
+        meeting_timezone=meeting_timezone or "UTC",
+        waiting_room=waiting_room,
     )
 
     db.add(meeting)
+    db.flush()
+    _add_meeting_participants(db, meeting.id, current_user, participants)
+    if not current_user:
+        host_email = (organizer_email or "").strip().lower()
+        if host_email and host_email not in participants:
+            db.add(
+                Participant(
+                    meeting_id=meeting.id,
+                    user_id=None,
+                    email=host_email,
+                    role="host",
+                    status="joined",
+                    joined_at=get_utc_now(),
+                )
+            )
     db.commit()
     db.refresh(meeting)
-
-    settings = get_meeting_settings(db, meeting)
-    settings.waiting_room_enabled = waiting_room
-    db.commit()
 
     from backend.services.guest_session import guest_session_manager
 
@@ -168,7 +214,7 @@ def create_instant_meeting(
             agenda=agenda,
         )
 
-    payload = serialize_meeting(meeting, now_utc=now, role="owner" if owner_id else "participant")
+    payload = serialize_meeting(meeting, now_utc=now, role="owner" if owner_id else "guest")
     return {
         "msg": "Instant meeting started.",
         "meeting": payload,

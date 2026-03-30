@@ -14,8 +14,10 @@ router = APIRouter()
 def note_to_dict(n: Note):
     return {
         "id": n.id,
-        "note_text": n.note_text,
+        "note_text": n.content,  # backward-compatible response key
+        "content": n.content,
         "note_date": n.note_date.isoformat() if n.note_date else None,
+        "meeting_id": n.meeting_id,
     }
 
 # ------------------------------------------------------
@@ -25,6 +27,7 @@ def note_to_dict(n: Note):
 def create_note(
     note_text: str = Body(...),
     note_date: str = Body(...),  # YYYY-MM-DD
+    meeting_id: int | None = Body(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -38,8 +41,9 @@ def create_note(
 
     new_note = Note(
         user_id=current_user.id,
+        meeting_id=meeting_id,
         note_date=date_obj,
-        note_text=note_text,
+        content=note_text,
     )
 
     db.add(new_note)
