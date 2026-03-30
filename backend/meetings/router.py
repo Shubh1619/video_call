@@ -2,6 +2,7 @@ import asyncio, os, uuid, json, logging
 import datetime as dt
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Body, BackgroundTasks, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.responses import JSONResponse
@@ -69,6 +70,7 @@ def schedule_meeting(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    participants = list(dict.fromkeys((email or "").strip().lower() for email in participants if isinstance(email, str) and email.strip()))
     start_dt = parse_datetime_to_utc(start_time)
     end_dt = parse_datetime_to_utc(end_time)
     
@@ -130,6 +132,7 @@ def create_instant_meeting(
     waiting_room: bool = Body(False),
     db: Session = Depends(get_db),
 ):
+    participants = list(dict.fromkeys((email or "").strip().lower() for email in participants if isinstance(email, str) and email.strip()))
     auth_header = request.headers.get("Authorization", "")
     token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
 
@@ -898,6 +901,56 @@ def get_meetings_by_date(
     ).all()
 
     return {"date": date, "meetings": [meeting_to_dict(m) for m in meetings]}
+
+
+@router.get("/meetings/dashboard")
+def get_dashboard_meetings(
+    upcoming_only: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    user_email = (current_user.email or "").strip().lower()
+
+    owner_query = db.query(Meeting).filter(Meeting.owner_id == current_user.id)
+    participant_query = db.query(Meeting).filter(Meeting.attendee_emails.any(user_email))
+
+    if upcoming_only:
+        now = datetime.now(timezone.utc)
+        owner_query = owner_query.filter(Meeting.scheduled_start >= now)
+        participant_query = participant_query.filter(Meeting.scheduled_start >= now)
+
+    owner_meetings = owner_query.all()
+    participant_meetings = participant_query.all()
+
+    merged_by_id = {meeting.id: meeting for meeting in owner_meetings + participant_meetings}
+    all_meetings = list(merged_by_id.values())
+    all_meetings.sort(key=lambda meeting: meeting.scheduled_start or datetime.max.replace(tzinfo=timezone.utc))
+
+    grouped = defaultdict(list)
+    now = datetime.now(timezone.utc)
+
+    for meeting in all_meetings:
+        if not meeting.scheduled_start:
+            continue
+
+        role = "owner" if meeting.owner_id == current_user.id else "participant"
+        start_dt = meeting.scheduled_start
+        end_dt = meeting.scheduled_end
+        date_key = start_dt.date().isoformat()
+
+        grouped[date_key].append({
+            "meeting_id": meeting.id,
+            "title": meeting.title,
+            "agenda": meeting.agenda,
+            "scheduled_start": start_dt.isoformat() if start_dt else None,
+            "scheduled_end": end_dt.isoformat() if end_dt else None,
+            "time": start_dt.strftime("%I:%M %p"),
+            "role": role,
+            "is_upcoming": bool(start_dt and start_dt > now),
+            "is_live": bool(start_dt and end_dt and start_dt <= now <= end_dt),
+        })
+
+    return dict(grouped)
 
 
 @router.get("/user/{user_id}")
