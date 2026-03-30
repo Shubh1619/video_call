@@ -37,27 +37,20 @@ def get_utc_now():
     """Get current UTC time (timezone-aware)."""
     return datetime.now(timezone.utc)
 
-
-def get_utc_now_naive():
-    """Get current UTC time as naive datetime for database comparisons."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
 # -----------------------------
 # Meeting Reminder Jobs
 # -----------------------------
 
 def schedule_meeting_reminder(meeting_id: int, start_dt, recipients: list):
-    """
-    Schedule a reminder 5 minutes before meeting start.
-    """
     if start_dt:
-        if hasattr(start_dt, 'tzinfo') and start_dt.tzinfo:
-            reminder_time = start_dt - timedelta(minutes=5)
-        else:
-            reminder_time = start_dt - timedelta(minutes=5)
-        
-        if reminder_time > get_utc_now_naive():
+        # ✅ ensure start_dt is timezone-aware (UTC)
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc)
+
+        reminder_time = start_dt - timedelta(minutes=5)
+
+        # ✅ compare with aware datetime
+        if reminder_time > datetime.now(timezone.utc):
             scheduler.add_job(
                 send_meeting_reminder_job,
                 DateTrigger(run_date=reminder_time),
