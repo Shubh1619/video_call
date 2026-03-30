@@ -1,4 +1,4 @@
-import sib_api_v3_sdk
+﻿import sib_api_v3_sdk
 from sib_api_v3_sdk.rest import ApiException
 from backend.core.config import MAIL_CONFIG
 from typing import List
@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ------------------------------
-# ✅ BREVO CONFIG
+# âœ… BREVO CONFIG
 # ------------------------------
 configuration = sib_api_v3_sdk.Configuration()
 configuration.api_key['api-key'] = MAIL_CONFIG.get("BREVO_API_KEY")
@@ -18,7 +18,7 @@ api_instance = sib_api_v3_sdk.TransactionalEmailsApi(
 )
 
 # ------------------------------
-# ✅ SAFE EMAIL SENDER (BREVO)
+# âœ… SAFE EMAIL SENDER (BREVO)
 # ------------------------------
 async def safe_send_email(recipients, subject, html):
     try:
@@ -33,14 +33,14 @@ async def safe_send_email(recipients, subject, html):
         )
 
         api_instance.send_transac_email(email)
-        logger.info("✅ Email sent via Brevo")
+        logger.info("âœ… Email sent via Brevo")
 
     except ApiException as e:
-        logger.error(f"❌ Brevo error: {e}")
+        logger.error(f"âŒ Brevo error: {e}")
 
 
 # ------------------------------
-# ✅ COMMON HTML TEMPLATE
+# âœ… COMMON HTML TEMPLATE
 # ------------------------------
 def build_email_template(title, subtitle, content_html, button_link, button_text, color="#1a73e8"):
     return f"""
@@ -89,7 +89,7 @@ def build_email_template(title, subtitle, content_html, button_link, button_text
 
 
 # ------------------------------
-# ✅ INSTANT MEETING EMAIL
+# âœ… INSTANT MEETING EMAIL
 # ------------------------------
 async def send_instant_invitation_emails(
     recipients: List[str],
@@ -104,7 +104,7 @@ async def send_instant_invitation_emails(
 
     content = f"""
     <p>Hello,</p>
-    <p>You’ve been invited to an instant meeting.</p>
+    <p>Youâ€™ve been invited to an instant meeting.</p>
     <p><strong>Organizer:</strong> {organizer_email}<br>
        <strong>Agenda:</strong> {agenda}</p>
     """
@@ -121,7 +121,7 @@ async def send_instant_invitation_emails(
 
 
 # ------------------------------
-# ✅ SCHEDULED MEETING EMAIL
+# âœ… SCHEDULED MEETING EMAIL
 # ------------------------------
 async def send_invitation_emails(
     recipients: List[str],
@@ -133,7 +133,7 @@ async def send_invitation_emails(
 ):
     content = f"""
     <p>Hello,</p>
-    <p>You’ve been invited to a meeting.</p>
+    <p>Youâ€™ve been invited to a meeting.</p>
     <p><strong>Organizer:</strong> {organizer_email}<br>
        <strong>Agenda:</strong> {agenda}<br>
        <strong>Start Time:</strong> {start_dt}</p>
@@ -151,7 +151,7 @@ async def send_invitation_emails(
 
 
 # ------------------------------
-# ✅ MEETING REMINDER
+# âœ… MEETING REMINDER
 # ------------------------------
 async def send_meeting_reminder(
     recipients: List[str],
@@ -186,7 +186,7 @@ async def send_meeting_reminder(
 
 
 # ------------------------------
-# ✅ NOTE REMINDER
+# âœ… NOTE REMINDER
 # ------------------------------
 async def send_note_reminder_email_async(
     email: str,
@@ -215,7 +215,7 @@ async def send_note_reminder_email_async(
 
 
 # ------------------------------
-# ✅ SYNC WRAPPER (SCHEDULER)
+# âœ… SYNC WRAPPER (SCHEDULER)
 # ------------------------------
 def send_note_reminder_email(email: str, note: str, note_date):
     import asyncio
@@ -237,18 +237,4 @@ def send_note_reminder_email(email: str, note: str, note_date):
             loop.close()
 
 
-# ------------------------------
-# ✅ HELPER
-# ------------------------------
-def meeting_to_dict(m):
-    return {
-        "id": m.id,
-        "title": m.title,
-        "agenda": m.agenda,
-        "scheduled_start": m.scheduled_start.isoformat() if m.scheduled_start else None,
-        "scheduled_end": m.scheduled_end.isoformat() if m.scheduled_end else None,
-        "meeting_link": m.meeting_link,
-        "meeting_type": m.meeting_type,
-        "room_id": m.room_id,
-        "owner_id": m.owner_id,
-    }
+
