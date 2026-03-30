@@ -92,18 +92,29 @@ def schedule_meeting_reminder(meeting_id: int, start_dt, recipients: list | None
     if start_dt.tzinfo is None:
         start_dt = start_dt.replace(tzinfo=timezone.utc)
 
-    reminder_time = start_dt - timedelta(minutes=5)
+    now = get_utc_now()
+    if start_dt <= now:
+        logger.info(f"Skipping meeting reminder for meeting {meeting_id}: meeting already started/past")
+        return
 
-    if reminder_time > get_utc_now():
+    reminder_time = start_dt - timedelta(minutes=5)
+    run_at = reminder_time if reminder_time > now else now + timedelta(seconds=10)
+
+    if run_at > now:
         scheduler.add_job(
             send_meeting_reminder_job,
-            DateTrigger(run_date=reminder_time),
+            DateTrigger(run_date=run_at),
             args=[meeting_id, recipients or [], 0],
             id=f"meeting_reminder_{meeting_id}",
             replace_existing=True,
             max_instances=1,
         )
-        logger.info(f"Scheduled reminder for meeting {meeting_id} at {reminder_time}")
+        logger.info(
+            "Scheduled reminder for meeting %s at %s (start=%s)",
+            meeting_id,
+            run_at,
+            start_dt,
+        )
     else:
         logger.info(f"Skipping meeting reminder for meeting {meeting_id}: time already passed")
 
