@@ -939,9 +939,14 @@ def get_dashboard_meetings(
         date_key = start_dt.date().isoformat()
 
         grouped[date_key].append({
+            "id": meeting.id,
             "meeting_id": meeting.id,
             "title": meeting.title,
             "agenda": meeting.agenda,
+            "owner_id": meeting.owner_id,
+            "meeting_type": meeting.meeting_type,
+            "room_id": meeting.room_id,
+            "meeting_link": meeting.meeting_link,
             "scheduled_start": start_dt.isoformat() if start_dt else None,
             "scheduled_end": end_dt.isoformat() if end_dt else None,
             "time": start_dt.strftime("%I:%M %p"),
