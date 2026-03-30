@@ -53,6 +53,12 @@ def serialize_meeting(meeting, now_utc: datetime | None = None, role: str | None
             normalized_type == "scheduled"
             and role == "owner"
         ),
+        "permissions": {
+            "allow_user_ai": bool(getattr(meeting, "allow_user_ai", False)),
+            "allow_user_captions": bool(getattr(meeting, "allow_user_captions", False)),
+            "allow_guest_screen_share": bool(getattr(meeting, "allow_guest_screen_share", False)),
+            "allow_user_screen_share": bool(getattr(meeting, "allow_user_screen_share", False)),
+        },
     }
 
 

@@ -33,6 +33,10 @@ class Meeting(Base):
     allow_guest = Column(Boolean, default=True, nullable=False)
     waiting_room = Column(Boolean, default=False, nullable=False)
     mute_on_join = Column(Boolean, default=False, nullable=False)
+    allow_user_ai = Column(Boolean, default=False, nullable=False)
+    allow_user_captions = Column(Boolean, default=False, nullable=False)
+    allow_guest_screen_share = Column(Boolean, default=False, nullable=False)
+    allow_user_screen_share = Column(Boolean, default=False, nullable=False)
 
     status = Column(String(20), default="scheduled", nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)

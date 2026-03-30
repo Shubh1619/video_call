@@ -68,6 +68,10 @@ def schedule_meeting(
     participants: list[str] = Body([]),
     waiting_room: bool = Body(False),
     meeting_timezone: str = Body("UTC"),
+    allow_user_ai: bool = Body(False),
+    allow_user_captions: bool = Body(False),
+    allow_guest_screen_share: bool = Body(False),
+    allow_user_screen_share: bool = Body(False),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -90,6 +94,10 @@ def schedule_meeting(
         meeting_type="scheduled",
         meeting_timezone=meeting_timezone or "UTC",
         waiting_room=waiting_room,
+        allow_user_ai=allow_user_ai,
+        allow_user_captions=allow_user_captions,
+        allow_guest_screen_share=allow_guest_screen_share,
+        allow_user_screen_share=allow_user_screen_share,
     )
 
     db.add(meeting)
@@ -133,6 +141,10 @@ def create_instant_meeting(
     participants: list[str] = Body([]),
     waiting_room: bool = Body(False),
     meeting_timezone: str = Body("UTC"),
+    allow_user_ai: bool = Body(False),
+    allow_user_captions: bool = Body(False),
+    allow_guest_screen_share: bool = Body(False),
+    allow_user_screen_share: bool = Body(False),
     db: Session = Depends(get_db),
 ):
     participants = _normalize_emails(participants)
@@ -174,6 +186,10 @@ def create_instant_meeting(
         meeting_type="instant",
         meeting_timezone=meeting_timezone or "UTC",
         waiting_room=waiting_room,
+        allow_user_ai=allow_user_ai,
+        allow_user_captions=allow_user_captions,
+        allow_guest_screen_share=allow_guest_screen_share,
+        allow_user_screen_share=allow_user_screen_share,
     )
 
     db.add(meeting)
