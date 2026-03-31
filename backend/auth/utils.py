@@ -9,12 +9,14 @@ from backend.models.user import User
 from backend.core.config import SECRET_KEY
 import re
 import bcrypt
+import uuid
 
 # -----------------------------
 # Configuration
 # -----------------------------
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
 MAX_PASSWORD_BYTES = 72
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -39,6 +41,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def is_password_too_long(password: str) -> bool:
     return len(password.encode("utf-8")) > MAX_PASSWORD_BYTES
+
+
+def _as_utc(dt_obj: datetime | None) -> datetime:
+    if dt_obj is None:
+        return datetime.now(timezone.utc)
+    if dt_obj.tzinfo is None:
+        return dt_obj.replace(tzinfo=timezone.utc)
+    return dt_obj.astimezone(timezone.utc)
 
 # -----------------------------
 # Password Strength Validation
@@ -82,11 +92,56 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
 # -----------------------------
 # JWT utils (with timezone-aware datetimes)
 # -----------------------------
-def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
+def create_access_token(
+    data: dict,
+    expires_delta: timedelta = None,
+    password_updated_at: datetime | None = None,
+) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    pwd_at = _as_utc(password_updated_at)
+    to_encode.update({
+        "exp": expire,
+        "iat": now,
+        "pwd_at": pwd_at.isoformat(),
+    })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_password_reset_token(
+    email: str,
+    jti: str,
+    expires_minutes: int = PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,
+) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+    payload = {
+        "sub": email,
+        "jti": jti,
+        "scope": "password_reset",
+        "exp": expire,
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def verify_password_reset_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+
+    if payload.get("scope") != "password_reset":
+        return None
+
+    email = payload.get("sub")
+    jti = payload.get("jti")
+    if not email or not jti:
+        return None
+    return {"email": str(email), "jti": str(jti)}
+
+
+def generate_jti() -> str:
+    return uuid.uuid4().hex
 
 def decode_token(token: str) -> dict:
     try:
@@ -104,7 +159,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
+        token_pwd_at = payload.get("pwd_at")
         if email is None:
+            raise credentials_exception
+        if token_pwd_at is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
@@ -112,4 +170,17 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise credentials_exception
+
+    current_pwd_at = _as_utc(getattr(user, "password_updated_at", None) or getattr(user, "created_at", None))
+    try:
+        token_pwd_at_dt = datetime.fromisoformat(str(token_pwd_at))
+        if token_pwd_at_dt.tzinfo is None:
+            token_pwd_at_dt = token_pwd_at_dt.replace(tzinfo=timezone.utc)
+        token_pwd_at_dt = token_pwd_at_dt.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        raise credentials_exception
+
+    if token_pwd_at_dt < current_pwd_at:
+        raise credentials_exception
+
     return user

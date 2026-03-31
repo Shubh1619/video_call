@@ -237,4 +237,41 @@ def send_note_reminder_email(email: str, note: str, note_date):
             loop.close()
 
 
+async def send_password_reset_email(
+    recipient_email: str,
+    recipient_name: str | None,
+    reset_link: str,
+    app_reset_link: str | None = None,
+    expires_minutes: int = 30,
+):
+    display_name = (recipient_name or "there").strip() or "there"
+    content = f"""
+    <p>Hello {display_name},</p>
+    <p>We received a request to reset your password for your Meeting Platform account.</p>
 
+    <div style="background:#fff4e5;border:1px solid #ffd8a8;border-radius:8px;padding:12px;margin:14px 0;">
+      <p style="margin:0 0 8px 0;"><strong>Security Notice</strong></p>
+      <p style="margin:0;">This link is valid for <strong>{expires_minutes} minutes</strong> and can be used only once.</p>
+    </div>
+
+    <p>If you did not request this change, you can safely ignore this email. Your current password will remain unchanged.</p>
+    <p>For your safety, never share this link or token with anyone.</p>
+    """
+    if app_reset_link:
+        content += f"""
+        <p style="margin-top:10px;">
+          If you're on mobile, you can also open the app link directly:
+          <br><a href="{app_reset_link}">{app_reset_link}</a>
+        </p>
+        """
+
+    html = build_email_template(
+        "Password Reset",
+        "Reset your password securely",
+        content,
+        reset_link,
+        "Reset Password",
+        color="#d93025",
+    )
+
+    await safe_send_email([recipient_email], "Reset your password", html)

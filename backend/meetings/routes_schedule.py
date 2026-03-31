@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Request
@@ -172,7 +172,7 @@ def create_instant_meeting(
         host_display_name = current_user.name or current_user.email
     else:
         owner_id = None
-        organizer_email = host_name or "guest@meetify"
+        organizer_email = host_name or "guest@Meeting Platform"
         host_display_name = host_name or "Guest Host"
 
     meeting = Meeting(
