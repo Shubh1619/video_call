@@ -65,6 +65,20 @@ def get_utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def to_db_utc_naive(dt_obj: datetime | None) -> datetime | None:
+    """
+    Convert a datetime to UTC-naive form for SQL filter compatibility.
+
+    Some deployed databases still store meeting timestamps as naive `timestamp`
+    values. Binding timezone-aware datetimes in SQL comparisons can raise
+    driver-level errors, so we normalize to UTC-naive at query boundaries.
+    """
+    dt_utc = ensure_utc(dt_obj)
+    if dt_utc is None:
+        return None
+    return dt_utc.replace(tzinfo=None)
+
+
 def compute_meeting_flags(
     start_dt_utc: datetime | None,
     end_dt_utc: datetime | None,

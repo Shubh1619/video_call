@@ -10,7 +10,12 @@ from backend.models.meeting import Meeting
 from backend.models.participant import Participant
 from backend.models.user import User
 from backend.services.meeting_serializer import group_meetings_by_local_date, serialize_meeting
-from backend.services.time_service import get_utc_now, parse_date_to_utc_range, parse_month_to_utc_range
+from backend.services.time_service import (
+    get_utc_now,
+    parse_date_to_utc_range,
+    parse_month_to_utc_range,
+    to_db_utc_naive,
+)
 
 router = APIRouter()
 
@@ -22,14 +27,16 @@ def get_meetings_by_date(
     current_user=Depends(get_current_user),
 ):
     start_of_day, end_of_day, _ = parse_date_to_utc_range(date)
+    start_of_day_db = to_db_utc_naive(start_of_day)
+    end_of_day_db = to_db_utc_naive(end_of_day)
 
     meetings = (
         db.query(Meeting)
         .options(joinedload(Meeting.owner))
         .filter(
             Meeting.owner_id == current_user.id,
-            Meeting.scheduled_start >= start_of_day,
-            Meeting.scheduled_start < end_of_day,
+            Meeting.scheduled_start >= start_of_day_db,
+            Meeting.scheduled_start < end_of_day_db,
         )
         .all()
     )
@@ -49,6 +56,7 @@ def get_dashboard_meetings(
 ):
     user_email = (current_user.email or "").strip().lower()
     now = get_utc_now()
+    now_db = to_db_utc_naive(now)
 
     meetings_query = (
         db.query(Meeting)
@@ -64,7 +72,7 @@ def get_dashboard_meetings(
     )
 
     if upcoming_only:
-        meetings_query = meetings_query.filter(Meeting.scheduled_end >= now)
+        meetings_query = meetings_query.filter(Meeting.scheduled_end >= now_db)
 
     all_meetings = meetings_query.all()
     all_meetings.sort(key=lambda meeting: meeting.scheduled_start or datetime.max.replace(tzinfo=timezone.utc))
@@ -95,14 +103,16 @@ def get_meetings_by_month(
     current_user=Depends(get_current_user),
 ):
     start_date, end_date = parse_month_to_utc_range(year, month)
+    start_date_db = to_db_utc_naive(start_date)
+    end_date_db = to_db_utc_naive(end_date)
 
     meetings = (
         db.query(Meeting)
         .options(joinedload(Meeting.owner))
         .filter(
             Meeting.owner_id == current_user.id,
-            Meeting.scheduled_start >= start_date,
-            Meeting.scheduled_start < end_date,
+            Meeting.scheduled_start >= start_date_db,
+            Meeting.scheduled_start < end_date_db,
         )
         .all()
     )

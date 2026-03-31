@@ -21,6 +21,7 @@ from backend.core.config import DATABASE_URL
 from backend.email.db import SessionLocal
 from backend.email.utils import send_meeting_reminder, send_note_reminder_email_async
 from backend.models.meeting import Meeting
+from backend.services.time_service import to_db_utc_naive
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -253,17 +254,19 @@ def delete_expired_meetings():
     - Scheduled meetings 30 minutes after end time
     """
     now = get_utc_now()
+    instant_cutoff = to_db_utc_naive(now - timedelta(hours=2))
+    scheduled_cutoff = to_db_utc_naive(now - timedelta(minutes=30))
 
     try:
         with SessionLocal() as db:
             instant_expired = db.query(Meeting).filter(
                 Meeting.meeting_type == "instant",
-                Meeting.scheduled_start <= now - timedelta(hours=2),
+                Meeting.scheduled_start <= instant_cutoff,
             ).all()
 
             scheduled_expired = db.query(Meeting).filter(
                 Meeting.meeting_type.in_(["regular", "scheduled"]),
-                Meeting.scheduled_end <= now - timedelta(minutes=30),
+                Meeting.scheduled_end <= scheduled_cutoff,
             ).all()
 
             to_delete = instant_expired + scheduled_expired
