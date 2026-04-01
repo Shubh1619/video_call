@@ -1,12 +1,18 @@
 from fastapi import APIRouter, Depends, Body, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timezone
+import re
 from backend.email.db import get_db
 from backend.auth.utils import get_current_user
 from backend.models.notes import Note
 from backend.scheduler.unified_scheduler import schedule_note_reminder
 
 router = APIRouter()
+
+
+def _is_meaningful_note(value: str) -> bool:
+    text = (value or "").strip()
+    return bool(text) and not re.fullmatch(r"[.\s]+", text)
 
 # ------------------------------------------------------
 # Helper: Serialize Note
@@ -31,6 +37,12 @@ def create_note(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    if not _is_meaningful_note(note_text):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Note cannot be empty or meaningless",
+        )
+
     try:
         date_obj = datetime.strptime(note_date, "%Y-%m-%d").date()
     except ValueError:
@@ -62,6 +74,53 @@ def create_note(
         "msg": "Note saved",
         "note": note_to_dict(new_note),
     }
+
+
+@router.put("/notes/{note_id}")
+def update_note(
+    note_id: int,
+    note_text: str = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if not _is_meaningful_note(note_text):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Note cannot be empty or meaningless",
+        )
+
+    note = db.query(Note).filter(
+        Note.id == note_id,
+        Note.user_id == current_user.id,
+    ).first()
+
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
+
+    note.content = note_text.strip()
+    db.commit()
+    db.refresh(note)
+
+    return {"msg": "Note updated", "note": note_to_dict(note)}
+
+
+@router.delete("/notes/{note_id}")
+def delete_note(
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    note = db.query(Note).filter(
+        Note.id == note_id,
+        Note.user_id == current_user.id,
+    ).first()
+
+    if not note:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Note not found")
+
+    db.delete(note)
+    db.commit()
+    return {"msg": "Note deleted", "id": note_id}
 
 # ------------------------------------------------------
 # GET NOTES BY DATE (DETAIL VIEW)
@@ -135,42 +194,3 @@ def get_notes_by_month_compat(
         return {"dates": [], "notes": []}
     
     return get_notes_by_month(year, mon, db, current_user)
-
-# ------------------------------------------------------
-# DELETE NOTES BY DATE
-# ------------------------------------------------------
-@router.delete("/notes/delete-by-date")
-def delete_notes_by_date(
-    date: str,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    try:
-        target_date = datetime.strptime(date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid date format. Use YYYY-MM-DD",
-        )
-
-    notes = db.query(Note).filter(
-        Note.user_id == current_user.id,
-        Note.note_date == target_date,
-    ).all()
-
-    if not notes:
-        return {
-            "msg": "No notes found for this date",
-            "date": date,
-        }
-
-    for note in notes:
-        db.delete(note)
-
-    db.commit()
-
-    return {
-        "msg": "Notes deleted successfully",
-        "deleted_count": len(notes),
-        "date": date,
-    }
