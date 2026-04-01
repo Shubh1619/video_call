@@ -7,6 +7,8 @@ from backend.models.meeting import Meeting  # noqa: F401
 from backend.models.participant import Participant  # noqa: F401
 from backend.models.notes import Note  # noqa: F401
 from backend.models.password_reset_token import PasswordResetToken  # noqa: F401
+from backend.models.auth_session import AuthSession  # noqa: F401
+from backend.models.auth_audit_log import AuthAuditLog  # noqa: F401
 
 # SSL CA certificate
 ssl_ca_path = os.getenv("TIDB_SSL_CA_PATH", os.path.join(os.path.dirname(__file__), "isrgrootx1.pem"))
@@ -57,5 +59,20 @@ def init_db():
                 text(
                     "UPDATE users SET password_updated_at = created_at "
                     "WHERE password_updated_at IS NULL"
+                )
+            )
+
+    if "session_version" not in user_columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE users "
+                    "ADD COLUMN session_version INTEGER DEFAULT 1"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE users SET session_version = 1 "
+                    "WHERE session_version IS NULL"
                 )
             )

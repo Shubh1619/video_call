@@ -1,6 +1,7 @@
 from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
+from jose.exceptions import ExpiredSignatureError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -10,13 +11,15 @@ from backend.core.config import SECRET_KEY
 import re
 import bcrypt
 import uuid
+import hashlib
 
 # -----------------------------
 # Configuration
 # -----------------------------
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 120
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 10
+REFRESH_TOKEN_EXPIRE_DAYS = 30
 MAX_PASSWORD_BYTES = 72
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -100,12 +103,25 @@ def create_access_token(
     to_encode = data.copy()
     now = datetime.now(timezone.utc)
     expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    pwd_at = _as_utc(password_updated_at)
     to_encode.update({
         "exp": expire,
-        "iat": now,
-        "pwd_at": pwd_at.isoformat(),
+        "iat": int(now.timestamp()),
+        "sv": int(data.get("sv", 1)),
     })
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    now = datetime.now(timezone.utc)
+    expire = now + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": int(now.timestamp()),
+            "scope": "refresh",
+        }
+    )
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -127,16 +143,18 @@ def create_password_reset_token(
 def verify_password_reset_token(token: str) -> dict | None:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except ExpiredSignatureError:
+        return {"error": "expired"}
     except JWTError:
-        return None
+        return {"error": "invalid"}
 
     if payload.get("scope") != "password_reset":
-        return None
+        return {"error": "invalid"}
 
     email = payload.get("sub")
     jti = payload.get("jti")
     if not email or not jti:
-        return None
+        return {"error": "invalid"}
     return {"email": str(email), "jti": str(jti)}
 
 
@@ -150,6 +168,10 @@ def decode_token(token: str) -> dict:
     except JWTError:
         return None
 
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -159,28 +181,13 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        token_pwd_at = payload.get("pwd_at")
         if email is None:
-            raise credentials_exception
-        if token_pwd_at is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
     user = db.query(User).filter(User.email == email).first()
     if user is None:
-        raise credentials_exception
-
-    current_pwd_at = _as_utc(getattr(user, "password_updated_at", None) or getattr(user, "created_at", None))
-    try:
-        token_pwd_at_dt = datetime.fromisoformat(str(token_pwd_at))
-        if token_pwd_at_dt.tzinfo is None:
-            token_pwd_at_dt = token_pwd_at_dt.replace(tzinfo=timezone.utc)
-        token_pwd_at_dt = token_pwd_at_dt.astimezone(timezone.utc)
-    except (TypeError, ValueError):
-        raise credentials_exception
-
-    if token_pwd_at_dt < current_pwd_at:
         raise credentials_exception
 
     return user

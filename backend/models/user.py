@@ -17,8 +17,11 @@ class User(Base):
     name = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     password_updated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    session_version = Column(Integer, default=1, nullable=False)
 
     owned_meetings = relationship('Meeting', back_populates='owner', cascade='all, delete')
     participants = relationship('Participant', back_populates='user')
     notes = relationship('Note', back_populates='user')
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
+    auth_sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
+    auth_audit_logs = relationship("AuthAuditLog", back_populates="user", cascade="all, delete-orphan")
