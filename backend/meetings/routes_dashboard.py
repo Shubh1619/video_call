@@ -11,9 +11,11 @@ from backend.models.participant import Participant
 from backend.models.user import User
 from backend.services.meeting_serializer import group_meetings_by_local_date, serialize_meeting
 from backend.services.time_service import (
+    ensure_utc,
     get_utc_now,
     parse_date_to_utc_range,
     parse_month_to_utc_range,
+    to_app_timezone,
     to_db_utc_naive,
 )
 
@@ -74,7 +76,17 @@ def get_dashboard_meetings(
     if upcoming_only:
         meetings_query = meetings_query.filter(Meeting.scheduled_end >= now_db)
 
-    all_meetings = meetings_query.all()
+    app_today = to_app_timezone(now).date()
+
+    def _should_include(meeting: Meeting) -> bool:
+        if meeting.meeting_type != "instant":
+            return True
+        start_utc = ensure_utc(meeting.scheduled_start)
+        if not start_utc:
+            return False
+        return to_app_timezone(start_utc).date() == app_today
+
+    all_meetings = [meeting for meeting in meetings_query.all() if _should_include(meeting)]
     all_meetings.sort(key=lambda meeting: meeting.scheduled_start or datetime.max.replace(tzinfo=timezone.utc))
 
     def _role_resolver(meeting: Meeting) -> str:
