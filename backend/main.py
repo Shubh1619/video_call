@@ -56,11 +56,30 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # --- CORS ---
+LOCAL_ORIGINS = {
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8080",
+}
+
+DEPLOYED_ORIGINS = {
+    "https://meet-frontend-4op.pages.dev",
+}
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://meet-frontend-4op.pages.dev,http://localhost:5173/"
-    ],
+    allow_origins=sorted(
+        {
+            *(origin.strip().rstrip("/") for origin in CORS_ORIGINS if origin.strip()),
+            *LOCAL_ORIGINS,
+            *DEPLOYED_ORIGINS,
+        }
+    ),
+    # Allow Cloudflare Pages preview domains for this frontend project.
+    allow_origin_regex=r"^https://meet-frontend-.*\.pages\.dev$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
