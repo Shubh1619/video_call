@@ -50,6 +50,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
     client_id: str = ""
     user_name: str = "Guest"
     is_in_waiting: bool = False
+    host_disconnect_mode: str = "end_all"
 
     async def keep_alive():
         while True:
@@ -421,6 +422,13 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 await broadcast_to_room(room_id, {**msg, "from": client_id}, exclude_id=client_id)
                 continue
 
+            if msg_type == "host-leave-mode":
+                if room_hosts.get(room_id) == client_id:
+                    requested_mode = str(msg.get("mode", "end_all")).strip().lower()
+                    if requested_mode in {"end_all", "leave_only"}:
+                        host_disconnect_mode = requested_mode
+                continue
+
     except WebSocketDisconnect:
         logging.info("Client '%s' (%s) disconnected from room %s", user_name, client_id, room_id)
     except Exception as exc:
@@ -452,27 +460,50 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             if room_hosts.get(room_id) == client_id:
                 del room_hosts[room_id]
 
-                for entry in waiting_rooms.get(room_id, []):
-                    await safe_send(entry["ws"], {
-                        "type": "host-left",
-                        "message": "The host has left. The meeting is now closed.",
-                    })
-                    try:
-                        await entry["ws"].close()
-                    except Exception:
-                        pass
-                waiting_rooms[room_id] = []
+                if host_disconnect_mode == "leave_only":
+                    for entry in waiting_rooms.get(room_id, []):
+                        await safe_send(
+                            entry["ws"],
+                            {
+                                "type": "host-left",
+                                "message": "Host left. Join requests are closed for now.",
+                            },
+                        )
+                        try:
+                            await entry["ws"].close()
+                        except Exception:
+                            pass
+                    waiting_rooms[room_id] = []
 
-                for _, ws in list(rooms.get(room_id, {}).items()):
-                    await safe_send(ws, {
-                        "type": "host-left",
-                        "message": "The host has left. The meeting is now closed.",
-                    })
-                    try:
-                        await ws.close()
-                    except Exception:
-                        pass
-                rooms[room_id] = {}
+                    await broadcast_to_room(
+                        room_id,
+                        {
+                            "type": "host-left-continue",
+                            "message": "Host left the meeting. Other participants can continue.",
+                        },
+                    )
+                else:
+                    for entry in waiting_rooms.get(room_id, []):
+                        await safe_send(entry["ws"], {
+                            "type": "host-left",
+                            "message": "The host has left. The meeting is now closed.",
+                        })
+                        try:
+                            await entry["ws"].close()
+                        except Exception:
+                            pass
+                    waiting_rooms[room_id] = []
+
+                    for _, ws in list(rooms.get(room_id, {}).items()):
+                        await safe_send(ws, {
+                            "type": "host-left",
+                            "message": "The host has left. The meeting is now closed.",
+                        })
+                        try:
+                            await ws.close()
+                        except Exception:
+                            pass
+                    rooms[room_id] = {}
 
             if room_id in rooms and not rooms[room_id] and not waiting_rooms.get(room_id):
                 rooms.pop(room_id, None)
