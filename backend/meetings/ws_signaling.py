@@ -195,41 +195,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                             exclude_id=client_id,
                         )
                     else:
-                        waiting_required = bool(meeting.waiting_room)
-                        approved = bool(session and session.is_approved)
-                        if not waiting_required or approved:
-                            rooms[room_id][client_id] = websocket
-                            participant_names[room_id][client_id] = user_name
-                            client_roles[room_id][client_id] = role
-                            is_in_waiting = False
-                            await safe_send(
-                                websocket,
-                                {
-                                    "type": "joined",
-                                    "role": role,
-                                    "waiting_room": False,
-                                },
-                            )
-
-                            if approved:
-                                await safe_send(websocket, {"type": "approved", "message": "Welcome back to the meeting."})
-
-                            await broadcast_to_room(
-                                room_id,
-                                {"type": "user-joined", "id": client_id, "name": user_name, "role": role},
-                                exclude_id=client_id,
-                            )
-
-                            for other_id in list(rooms[room_id].keys()):
-                                if other_id != client_id:
-                                    other_name = participant_names[room_id].get(other_id, "Participant")
-                                    other_role = client_roles.get(room_id, {}).get(other_id, "guest")
-                                    await safe_send(
-                                        websocket,
-                                        {"type": "user-joined", "id": other_id, "name": other_name, "role": other_role},
-                                    )
-                            continue
-
+                        # Enforce host approval flow for every non-host join.
                         waiting_rooms[room_id] = [
                             w for w in waiting_rooms.get(room_id, []) if w["client_id"] != client_id
                         ]
