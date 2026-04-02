@@ -31,7 +31,7 @@ class Meeting(Base):
 
     password = Column(String(255), nullable=True)
     allow_guest = Column(Boolean, default=True, nullable=False)
-    waiting_room = Column(Boolean, default=False, nullable=False)
+    waiting_room = Column(Boolean, default=True, nullable=False)
     mute_on_join = Column(Boolean, default=False, nullable=False)
     allow_user_ai = Column(Boolean, default=False, nullable=False)
     allow_user_captions = Column(Boolean, default=False, nullable=False)

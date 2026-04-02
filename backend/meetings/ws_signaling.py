@@ -153,6 +153,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                         rooms[room_id][client_id] = websocket
                         participant_names[room_id][client_id] = user_name
                         client_roles[room_id][client_id] = "host"
+                        await safe_send(websocket, {"type": "joined", "role": "host"})
 
                         for other_id in list(rooms[room_id].keys()):
                             if other_id != client_id:
@@ -201,6 +202,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                             participant_names[room_id][client_id] = user_name
                             client_roles[room_id][client_id] = role
                             is_in_waiting = False
+                            await safe_send(
+                                websocket,
+                                {
+                                    "type": "joined",
+                                    "role": role,
+                                    "waiting_room": False,
+                                },
+                            )
 
                             if approved:
                                 await safe_send(websocket, {"type": "approved", "message": "Welcome back to the meeting."})
