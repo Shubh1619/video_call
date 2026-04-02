@@ -7,6 +7,7 @@ from backend.models.meeting import Meeting  # noqa: F401
 from backend.models.participant import Participant  # noqa: F401
 from backend.models.notes import Note  # noqa: F401
 from backend.models.password_reset_token import PasswordResetToken  # noqa: F401
+from backend.models.email_verification_token import EmailVerificationToken  # noqa: F401
 from backend.models.auth_session import AuthSession  # noqa: F401
 from backend.models.auth_audit_log import AuthAuditLog  # noqa: F401
 
@@ -74,5 +75,40 @@ def init_db():
                 text(
                     "UPDATE users SET session_version = 1 "
                     "WHERE session_version IS NULL"
+                )
+            )
+
+    if "is_email_verified" not in user_columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE users "
+                    "ADD COLUMN is_email_verified BOOLEAN DEFAULT FALSE"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE users SET is_email_verified = TRUE "
+                    "WHERE is_email_verified IS NULL"
+                )
+            )
+
+    if "email_verified_at" not in user_columns:
+        dialect = engine.dialect.name
+        if dialect.startswith("postgres"):
+            column_type = "TIMESTAMP WITH TIME ZONE"
+        else:
+            column_type = "DATETIME"
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE users "
+                    f"ADD COLUMN email_verified_at {column_type} NULL"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE users SET email_verified_at = created_at "
+                    "WHERE is_email_verified = TRUE AND email_verified_at IS NULL"
                 )
             )

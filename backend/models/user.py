@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.orm import relationship
 
 Base = declarative_base()
@@ -18,10 +18,13 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     password_updated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     session_version = Column(Integer, default=1, nullable=False)
+    is_email_verified = Column(Boolean, default=False, nullable=False)
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
 
     owned_meetings = relationship('Meeting', back_populates='owner', cascade='all, delete')
     participants = relationship('Participant', back_populates='user')
     notes = relationship('Note', back_populates='user')
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
+    email_verification_tokens = relationship("EmailVerificationToken", back_populates="user", cascade="all, delete-orphan")
     auth_sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
     auth_audit_logs = relationship("AuthAuditLog", back_populates="user", cascade="all, delete-orphan")

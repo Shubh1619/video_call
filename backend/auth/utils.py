@@ -12,6 +12,7 @@ import re
 import bcrypt
 import uuid
 import hashlib
+import secrets
 
 # -----------------------------
 # Configuration
@@ -171,6 +172,11 @@ def decode_token(token: str) -> dict:
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def generate_numeric_otp(length: int = 6) -> str:
+    digits = "0123456789"
+    return "".join(secrets.choice(digits) for _ in range(length))
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(

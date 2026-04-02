@@ -242,3 +242,68 @@ def create_instant_meeting(
         "host_session_id": session_id,
         "host_guest_token": guest_token,
     }
+
+
+@router.post("/instant/{room_id}/invite")
+def invite_instant_participants(
+    room_id: str,
+    background_tasks: BackgroundTasks,
+    participants: list[str] = Body(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    invitees = _normalize_emails(participants)
+    if not invitees:
+        return {"msg": "No participants to invite.", "participants": []}
+
+    meeting = (
+        db.query(Meeting)
+        .filter(Meeting.room_id == room_id, Meeting.meeting_type == "instant")
+        .first()
+    )
+    if not meeting:
+        return {"msg": "Meeting not found.", "participants": []}
+
+    if not meeting.owner_id or meeting.owner_id != current_user.id:
+        return {"msg": "Only host can invite participants.", "participants": []}
+
+    existing = {
+        (p.email or "").strip().lower()
+        for p in db.query(Participant).filter(Participant.meeting_id == meeting.id).all()
+    }
+
+    host_email = (current_user.email or "").strip().lower()
+    to_add: list[str] = []
+    for email in invitees:
+        if email == host_email:
+            continue
+        if email in existing:
+            continue
+        to_add.append(email)
+        existing.add(email)
+        db.add(
+            Participant(
+                meeting_id=meeting.id,
+                user_id=None,
+                email=email,
+                role="participant",
+                status="invited",
+            )
+        )
+
+    db.commit()
+
+    if to_add:
+        background_tasks.add_task(
+            send_instant_invitation_emails,
+            recipients=to_add,
+            organizer_email=current_user.email,
+            join_link=meeting.meeting_link,
+            title=meeting.title,
+            agenda=meeting.agenda,
+        )
+
+    return {
+        "msg": "Invitation emails sent." if to_add else "No new participants were invited.",
+        "participants": to_add,
+    }

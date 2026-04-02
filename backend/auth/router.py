@@ -16,6 +16,7 @@ from backend.auth.utils import (
     verify_password_reset_token,
     decode_token,
     hash_token,
+    generate_numeric_otp,
     get_password_hash,
     verify_password,
     is_password_too_long,
@@ -26,6 +27,7 @@ from backend.auth.utils import (
 )
 from backend.models.user import User
 from backend.models.password_reset_token import PasswordResetToken
+from backend.models.email_verification_token import EmailVerificationToken
 from backend.models.auth_session import AuthSession
 from backend.models.auth_audit_log import AuthAuditLog
 from backend.auth.schemas import (
@@ -36,12 +38,18 @@ from backend.auth.schemas import (
     ChangePasswordRequest,
     RefreshTokenRequest,
     LogoutRequest,
-    SessionResponse,
     MessageResponse,
+    VerifyEmailRequest,
+    VerifyEmailOtpRequest,
+    ConfirmPasswordChangeOtpRequest,
 )
 from backend.core.rate_limit import rate_limit_auth, limiter
 from backend.core.config import MY_DOMAIN
-from backend.email.utils import send_password_reset_email
+from backend.email.utils import (
+    send_password_reset_email,
+    send_email_verification_email,
+    send_password_change_verification_email,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -49,6 +57,10 @@ logger = logging.getLogger(__name__)
 # Per-email forgot-password throttle: max 5 requests / 15 minutes.
 _FORGOT_PWD_WINDOW = timedelta(minutes=15)
 _FORGOT_PWD_LIMIT = 5
+EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES = 30
+PASSWORD_CHANGE_VERIFY_TOKEN_EXPIRE_MINUTES = 15
+EMAIL_VERIFY_PURPOSE = "email_verify"
+PASSWORD_CHANGE_PURPOSE = "password_change"
 
 
 def _utc_now() -> datetime:
@@ -139,12 +151,33 @@ def _check_forgot_password_email_rate_limit(db: Session, email: str):
             detail="Too many reset requests for this email. Please try again later.",
         )
 
+
+def _build_otp_metadata(otp_code: str) -> str:
+    return json.dumps({"otp_hash": hash_token(otp_code)}, ensure_ascii=True)
+
+
+def _is_email_otp_valid(token_row: EmailVerificationToken, otp_code: str) -> bool:
+    try:
+        metadata = json.loads(token_row.metadata_json or "{}")
+    except json.JSONDecodeError:
+        metadata = {}
+    expected_hash = str(metadata.get("otp_hash") or "")
+    return bool(expected_hash) and expected_hash == hash_token(otp_code.strip())
+
+
+def _mark_other_otps_used(db: Session, user_id: int, purpose: str, now_utc: datetime):
+    db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.user_id == user_id,
+        EmailVerificationToken.purpose == purpose,
+        EmailVerificationToken.used_at.is_(None),
+    ).update({"used_at": now_utc}, synchronize_session=False)
+
 # -------------------------
 # Register
 # -------------------------
-@router.post("/register", response_model=Token)
+@router.post("/register", response_model=MessageResponse)
 @rate_limit_auth()
-def register(user: UserCreate, request: Request, db: Session = Depends(get_db)):
+async def register(user: UserCreate, request: Request, db: Session = Depends(get_db)):
     # Validate password strength
     is_valid, error_message = validate_password_strength(user.password)
     if not is_valid:
@@ -166,25 +199,122 @@ def register(user: UserCreate, request: Request, db: Session = Depends(get_db)):
 
     # Hash password and save user
     hashed_password = get_password_hash(user.password)
-    db_user = User(email=user.email, hashed_password=hashed_password, name=user.name)
+    db_user = User(
+        email=user.email,
+        hashed_password=hashed_password,
+        name=user.name,
+        is_email_verified=False,
+        email_verified_at=None,
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
 
-    # Create access token
-    access_token, refresh_token, _ = _create_session_tokens(db, db_user, request)
+    now_utc = _utc_now()
+    otp_code = generate_numeric_otp()
+    _mark_other_otps_used(db, db_user.id, EMAIL_VERIFY_PURPOSE, now_utc)
+
+    db.add(
+        EmailVerificationToken(
+            user_id=db_user.id,
+            jti=generate_jti(),
+            purpose=EMAIL_VERIFY_PURPOSE,
+            metadata_json=_build_otp_metadata(otp_code),
+            expires_at=now_utc + timedelta(minutes=EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES),
+            requested_ip=(request.client.host if request.client else None),
+        )
+    )
+    db.commit()
+
+    try:
+        await send_email_verification_email(
+            recipient_email=db_user.email,
+            recipient_name=db_user.name,
+            otp_code=otp_code,
+            expires_minutes=EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES,
+        )
+    except Exception as exc:
+        logger.warning("Email verification dispatch failed: %s", exc)
+
     _log_auth_event(db, "register", request, user_id=db_user.id)
     db.commit()
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "expires_in": 2 * 60 * 60,
-        "token_type": "bearer",
-    }
+    return {"message": "Registration successful. Enter the OTP sent to your email to verify your account."}
 
 # -------------------------
 # Login
 # -------------------------
+@router.post("/verify-email/request", response_model=MessageResponse)
+@rate_limit_auth()
+async def resend_verify_email(payload: VerifyEmailRequest, request: Request, db: Session = Depends(get_db)):
+    normalized_email = payload.email.strip().lower()
+    user = db.query(User).filter(func.lower(User.email) == normalized_email).first()
+
+    if user and not bool(user.is_email_verified):
+        now_utc = _utc_now()
+        otp_code = generate_numeric_otp()
+        _mark_other_otps_used(db, user.id, EMAIL_VERIFY_PURPOSE, now_utc)
+        db.add(
+            EmailVerificationToken(
+                user_id=user.id,
+                jti=generate_jti(),
+                purpose=EMAIL_VERIFY_PURPOSE,
+                metadata_json=_build_otp_metadata(otp_code),
+                expires_at=now_utc + timedelta(minutes=EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES),
+                requested_ip=(request.client.host if request.client else None),
+            )
+        )
+        db.commit()
+        try:
+            await send_email_verification_email(
+                recipient_email=user.email,
+                recipient_name=user.name,
+                otp_code=otp_code,
+                expires_minutes=EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES,
+            )
+        except Exception as exc:
+            logger.warning("Resend verification dispatch failed: %s", exc)
+        _log_auth_event(db, "email_verify_requested", request, user_id=user.id)
+        db.commit()
+
+    return {"message": "If an account exists, a verification OTP has been sent."}
+
+
+@router.post("/verify-email", response_model=MessageResponse)
+@rate_limit_auth()
+def verify_email(payload: VerifyEmailOtpRequest, request: Request, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    otp = payload.otp.strip()
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification OTP")
+    if bool(user.is_email_verified):
+        return {"message": "Email is already verified."}
+
+    token_row = db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.user_id == user.id,
+        EmailVerificationToken.purpose == EMAIL_VERIFY_PURPOSE,
+        EmailVerificationToken.used_at.is_(None),
+    ).order_by(EmailVerificationToken.created_at.desc()).first()
+    if not token_row:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification OTP")
+
+    now_utc = _utc_now()
+    expires_at = token_row.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < now_utc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Verification OTP has expired")
+    if not _is_email_otp_valid(token_row, otp):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification OTP")
+
+    user.is_email_verified = True
+    user.email_verified_at = now_utc
+    _mark_other_otps_used(db, user.id, EMAIL_VERIFY_PURPOSE, now_utc)
+    _log_auth_event(db, "email_verified", request, user_id=user.id)
+    db.commit()
+    return {"message": "Email verified successfully. You can now log in."}
+
+
 @router.post("/login", response_model=Token)
 @rate_limit_auth()
 @limiter.limit("10/15 minutes")
@@ -286,7 +416,9 @@ def get_logged_in_user(current_user: User = Depends(get_current_user)):
     return {
         "id": current_user.id,
         "name": current_user.name,
-        "email": current_user.email
+        "email": current_user.email,
+        "is_email_verified": bool(current_user.is_email_verified),
+        "email_verified_at": current_user.email_verified_at.isoformat() if current_user.email_verified_at else None,
     }
 
 
@@ -407,7 +539,7 @@ def reset_password(payload: ResetPasswordRequest, request: Request, db: Session 
 
 @router.post("/change-password", response_model=MessageResponse)
 @rate_limit_auth()
-def change_password(
+async def change_password(
     payload: ChangePasswordRequest,
     request: Request,
     db: Session = Depends(get_db),
@@ -429,12 +561,68 @@ def change_password(
     if verify_password(payload.new_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="New password must be different from the old password")
 
-    current_user.hashed_password = get_password_hash(payload.new_password)
     now_utc = _utc_now()
-    current_user.password_updated_at = now_utc
-    _log_auth_event(db, "password_changed", request, user_id=current_user.id)
+    otp_code = generate_numeric_otp()
+    _mark_other_otps_used(db, current_user.id, PASSWORD_CHANGE_PURPOSE, now_utc)
+    db.add(
+        EmailVerificationToken(
+            user_id=current_user.id,
+            jti=generate_jti(),
+            purpose=PASSWORD_CHANGE_PURPOSE,
+            pending_password_hash=get_password_hash(payload.new_password),
+            metadata_json=_build_otp_metadata(otp_code),
+            expires_at=now_utc + timedelta(minutes=PASSWORD_CHANGE_VERIFY_TOKEN_EXPIRE_MINUTES),
+            requested_ip=(request.client.host if request.client else None),
+        )
+    )
+    db.commit()
+    try:
+        await send_password_change_verification_email(
+            recipient_email=current_user.email,
+            recipient_name=current_user.name,
+            otp_code=otp_code,
+            expires_minutes=PASSWORD_CHANGE_VERIFY_TOKEN_EXPIRE_MINUTES,
+        )
+    except Exception as exc:
+        logger.warning("Password-change confirmation email dispatch failed: %s", exc)
+    _log_auth_event(db, "password_change_requested", request, user_id=current_user.id)
     db.commit()
 
+    return {"message": "Password change OTP sent to your email."}
+
+
+@router.post("/change-password/confirm", response_model=MessageResponse)
+@rate_limit_auth()
+def confirm_password_change(
+    payload: ConfirmPasswordChangeOtpRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    token_row = db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.user_id == current_user.id,
+        EmailVerificationToken.purpose == PASSWORD_CHANGE_PURPOSE,
+        EmailVerificationToken.used_at.is_(None),
+    ).order_by(EmailVerificationToken.created_at.desc()).first()
+    if not token_row:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid OTP")
+
+    now_utc = _utc_now()
+    expires_at = token_row.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < now_utc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP has expired")
+    if not _is_email_otp_valid(token_row, payload.otp):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid OTP")
+    if not token_row.pending_password_hash:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending password change found")
+
+    current_user.hashed_password = token_row.pending_password_hash
+    current_user.password_updated_at = now_utc
+    _mark_other_otps_used(db, current_user.id, PASSWORD_CHANGE_PURPOSE, now_utc)
+    _log_auth_event(db, "password_changed", request, user_id=current_user.id)
+    db.commit()
     return {"message": "Password changed successfully"}
 
 

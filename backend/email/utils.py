@@ -42,7 +42,19 @@ async def safe_send_email(recipients, subject, html):
 # ------------------------------
 # âœ… COMMON HTML TEMPLATE
 # ------------------------------
-def build_email_template(title, subtitle, content_html, button_link, button_text, color="#1a73e8"):
+def build_email_template(title, subtitle, content_html, button_link=None, button_text=None, color="#1a73e8"):
+    cta_html = ""
+    if button_link and button_text:
+        cta_html = f"""
+                <div style="text-align:center;margin:30px 0;">
+                  <a href="{button_link}" 
+                     style="background:{color};color:white;padding:14px 28px;
+                            text-decoration:none;border-radius:6px;
+                            font-weight:bold;">
+                     {button_text}
+                  </a>
+                </div>
+        """
     return f"""
 <html>
   <body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial, sans-serif;">
@@ -61,15 +73,7 @@ def build_email_template(title, subtitle, content_html, button_link, button_text
             <tr>
               <td style="font-size:14px;color:#333;line-height:1.6;">
                 {content_html}
-
-                <div style="text-align:center;margin:30px 0;">
-                  <a href="{button_link}" 
-                     style="background:{color};color:white;padding:14px 28px;
-                            text-decoration:none;border-radius:6px;
-                            font-weight:bold;">
-                     {button_text}
-                  </a>
-                </div>
+                {cta_html}
               </td>
             </tr>
 
@@ -275,3 +279,69 @@ async def send_password_reset_email(
     )
 
     await safe_send_email([recipient_email], "Reset your password", html)
+
+
+async def send_email_verification_email(
+    recipient_email: str,
+    recipient_name: str | None,
+    otp_code: str,
+    expires_minutes: int = 30,
+):
+    display_name = (recipient_name or "there").strip() or "there"
+    content = f"""
+    <p>Hello {display_name},</p>
+    <p>Welcome to Meeting Platform. Please verify your email address to activate your account.</p>
+
+    <div style="background:#e9f2ff;border:1px solid #b6d4ff;border-radius:8px;padding:12px;margin:14px 0;">
+      <p style="margin:0 0 8px 0;"><strong>Email Verification</strong></p>
+      <p style="margin:0;">This OTP is valid for <strong>{expires_minutes} minutes</strong>.</p>
+    </div>
+
+    <div style="background:#f6f8fb;border:1px dashed #9bb6ff;border-radius:10px;padding:18px;margin:18px 0;text-align:center;">
+      <p style="margin:0 0 8px 0;color:#5b6b83;font-size:12px;letter-spacing:1px;">YOUR OTP CODE</p>
+      <p style="margin:0;font-size:30px;font-weight:700;letter-spacing:6px;color:#1a73e8;">{otp_code}</p>
+    </div>
+
+    <p>If you did not create this account, you can ignore this email.</p>
+    """
+
+    html = build_email_template(
+        "Verify Your Email",
+        "Enter this OTP in the app",
+        content,
+        color="#1a73e8",
+    )
+    await safe_send_email([recipient_email], "Verify your email address", html)
+
+
+async def send_password_change_verification_email(
+    recipient_email: str,
+    recipient_name: str | None,
+    otp_code: str,
+    expires_minutes: int = 15,
+):
+    display_name = (recipient_name or "there").strip() or "there"
+    content = f"""
+    <p>Hello {display_name},</p>
+    <p>We received a request to change your password. Please confirm this action.</p>
+
+    <div style="background:#fff4e5;border:1px solid #ffd8a8;border-radius:8px;padding:12px;margin:14px 0;">
+      <p style="margin:0 0 8px 0;"><strong>Security Notice</strong></p>
+      <p style="margin:0;">This OTP is valid for <strong>{expires_minutes} minutes</strong> and can be used only once.</p>
+    </div>
+
+    <div style="background:#fff8f2;border:1px dashed #ffb074;border-radius:10px;padding:18px;margin:18px 0;text-align:center;">
+      <p style="margin:0 0 8px 0;color:#7a5c45;font-size:12px;letter-spacing:1px;">PASSWORD CHANGE OTP</p>
+      <p style="margin:0;font-size:30px;font-weight:700;letter-spacing:6px;color:#d93025;">{otp_code}</p>
+    </div>
+
+    <p>If you did not request this password change, ignore this email and keep your account secure.</p>
+    """
+
+    html = build_email_template(
+        "Confirm Password Change",
+        "Enter this OTP in your profile",
+        content,
+        color="#d93025",
+    )
+    await safe_send_email([recipient_email], "Confirm your password change", html)
