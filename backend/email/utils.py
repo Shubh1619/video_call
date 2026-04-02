@@ -285,7 +285,7 @@ async def send_email_verification_email(
     recipient_email: str,
     recipient_name: str | None,
     otp_code: str,
-    expires_minutes: int = 30,
+    expires_seconds: int = 30,
 ):
     display_name = (recipient_name or "there").strip() or "there"
     content = f"""
@@ -294,7 +294,7 @@ async def send_email_verification_email(
 
     <div style="background:#e9f2ff;border:1px solid #b6d4ff;border-radius:8px;padding:12px;margin:14px 0;">
       <p style="margin:0 0 8px 0;"><strong>Email Verification</strong></p>
-      <p style="margin:0;">This OTP is valid for <strong>{expires_minutes} minutes</strong>.</p>
+      <p style="margin:0;">This OTP is valid for <strong>{expires_seconds} seconds</strong>.</p>
     </div>
 
     <div style="background:#f6f8fb;border:1px dashed #9bb6ff;border-radius:10px;padding:18px;margin:18px 0;text-align:center;">
@@ -318,7 +318,7 @@ async def send_password_change_verification_email(
     recipient_email: str,
     recipient_name: str | None,
     otp_code: str,
-    expires_minutes: int = 15,
+    expires_seconds: int = 30,
 ):
     display_name = (recipient_name or "there").strip() or "there"
     content = f"""
@@ -327,7 +327,7 @@ async def send_password_change_verification_email(
 
     <div style="background:#fff4e5;border:1px solid #ffd8a8;border-radius:8px;padding:12px;margin:14px 0;">
       <p style="margin:0 0 8px 0;"><strong>Security Notice</strong></p>
-      <p style="margin:0;">This OTP is valid for <strong>{expires_minutes} minutes</strong> and can be used only once.</p>
+      <p style="margin:0;">This OTP is valid for <strong>{expires_seconds} seconds</strong> and can be used only once.</p>
     </div>
 
     <div style="background:#fff8f2;border:1px dashed #ffb074;border-radius:10px;padding:18px;margin:18px 0;text-align:center;">

@@ -57,8 +57,7 @@ logger = logging.getLogger(__name__)
 # Per-email forgot-password throttle: max 5 requests / 15 minutes.
 _FORGOT_PWD_WINDOW = timedelta(minutes=15)
 _FORGOT_PWD_LIMIT = 5
-EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES = 30
-PASSWORD_CHANGE_VERIFY_TOKEN_EXPIRE_MINUTES = 15
+OTP_EXPIRE_SECONDS = 30
 EMAIL_VERIFY_PURPOSE = "email_verify"
 PASSWORD_CHANGE_PURPOSE = "password_change"
 
@@ -220,7 +219,7 @@ async def register(user: UserCreate, request: Request, db: Session = Depends(get
             jti=generate_jti(),
             purpose=EMAIL_VERIFY_PURPOSE,
             metadata_json=_build_otp_metadata(otp_code),
-            expires_at=now_utc + timedelta(minutes=EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES),
+            expires_at=now_utc + timedelta(seconds=OTP_EXPIRE_SECONDS),
             requested_ip=(request.client.host if request.client else None),
         )
     )
@@ -231,7 +230,7 @@ async def register(user: UserCreate, request: Request, db: Session = Depends(get
             recipient_email=db_user.email,
             recipient_name=db_user.name,
             otp_code=otp_code,
-            expires_minutes=EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES,
+            expires_seconds=OTP_EXPIRE_SECONDS,
         )
     except Exception as exc:
         logger.warning("Email verification dispatch failed: %s", exc)
@@ -259,7 +258,7 @@ async def resend_verify_email(payload: VerifyEmailRequest, request: Request, db:
                 jti=generate_jti(),
                 purpose=EMAIL_VERIFY_PURPOSE,
                 metadata_json=_build_otp_metadata(otp_code),
-                expires_at=now_utc + timedelta(minutes=EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES),
+                expires_at=now_utc + timedelta(seconds=OTP_EXPIRE_SECONDS),
                 requested_ip=(request.client.host if request.client else None),
             )
         )
@@ -269,7 +268,7 @@ async def resend_verify_email(payload: VerifyEmailRequest, request: Request, db:
                 recipient_email=user.email,
                 recipient_name=user.name,
                 otp_code=otp_code,
-                expires_minutes=EMAIL_VERIFY_TOKEN_EXPIRE_MINUTES,
+                expires_seconds=OTP_EXPIRE_SECONDS,
             )
         except Exception as exc:
             logger.warning("Resend verification dispatch failed: %s", exc)
@@ -571,7 +570,7 @@ async def change_password(
             purpose=PASSWORD_CHANGE_PURPOSE,
             pending_password_hash=get_password_hash(payload.new_password),
             metadata_json=_build_otp_metadata(otp_code),
-            expires_at=now_utc + timedelta(minutes=PASSWORD_CHANGE_VERIFY_TOKEN_EXPIRE_MINUTES),
+            expires_at=now_utc + timedelta(seconds=OTP_EXPIRE_SECONDS),
             requested_ip=(request.client.host if request.client else None),
         )
     )
@@ -581,7 +580,7 @@ async def change_password(
             recipient_email=current_user.email,
             recipient_name=current_user.name,
             otp_code=otp_code,
-            expires_minutes=PASSWORD_CHANGE_VERIFY_TOKEN_EXPIRE_MINUTES,
+            expires_seconds=OTP_EXPIRE_SECONDS,
         )
     except Exception as exc:
         logger.warning("Password-change confirmation email dispatch failed: %s", exc)
