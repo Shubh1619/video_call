@@ -22,6 +22,7 @@ room_hosts: Dict[str, str] = {}
 waiting_rooms: Dict[str, List[Dict]] = {}
 participant_names: Dict[str, Dict[str, str]] = {}
 client_roles: Dict[str, Dict[str, str]] = {}
+participant_states: Dict[str, Dict[str, dict]] = {}
 
 
 async def safe_send(ws: WebSocket, payload: dict):
@@ -136,11 +137,13 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     waiting_rooms.setdefault(room_id, [])
                     participant_names.setdefault(room_id, {})
                     client_roles.setdefault(room_id, {})
+                    participant_states.setdefault(room_id, {})
 
                     if previous_client_id and previous_client_id != client_id:
                         old_active_ws = rooms[room_id].pop(previous_client_id, None)
                         participant_names[room_id].pop(previous_client_id, None)
                         client_roles[room_id].pop(previous_client_id, None)
+                        participant_states[room_id].pop(previous_client_id, None)
                         waiting_rooms[room_id] = [
                             w for w in waiting_rooms.get(room_id, []) if w["client_id"] != previous_client_id
                         ]
@@ -156,12 +159,18 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                         rooms[room_id][client_id] = websocket
                         participant_names[room_id][client_id] = user_name
                         client_roles[room_id][client_id] = "host"
+                        participant_states[room_id][client_id] = {
+                            "audioEnabled": incoming_audio_enabled,
+                            "videoEnabled": incoming_video_enabled,
+                            "avatar_url": msg.get("avatar_url"),
+                        }
                         await safe_send(websocket, {"type": "joined", "role": "host"})
 
                         for other_id in list(rooms[room_id].keys()):
                             if other_id != client_id:
                                 other_name = participant_names[room_id].get(other_id, "Participant")
                                 other_role = client_roles.get(room_id, {}).get(other_id, "guest")
+                                other_state = participant_states.get(room_id, {}).get(other_id, {})
                                 await safe_send(
                                     websocket,
                                     {
@@ -169,8 +178,9 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                                         "id": other_id,
                                         "name": other_name,
                                         "role": other_role,
-                                        "audioEnabled": False,
-                                        "videoEnabled": False,
+                                        "audioEnabled": bool(other_state.get("audioEnabled", False)),
+                                        "videoEnabled": bool(other_state.get("videoEnabled", False)),
+                                        "avatar_url": other_state.get("avatar_url"),
                                     },
                                 )
 
@@ -318,6 +328,10 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     rooms[room_id][target_id] = target_ws
                     participant_names[room_id][target_id] = target_name
                     client_roles.setdefault(room_id, {})[target_id] = target_role
+                    participant_states.setdefault(room_id, {})[target_id] = {
+                        "audioEnabled": target_audio_enabled,
+                        "videoEnabled": target_video_enabled,
+                    }
 
                     await safe_send(target_ws, {"type": "approved", "message": "You have been approved to join the meeting."})
                     await broadcast_to_room(
@@ -336,6 +350,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                         if other_id != target_id:
                             other_name = participant_names[room_id].get(other_id, "Participant")
                             other_role = client_roles.get(room_id, {}).get(other_id, "guest")
+                            other_state = participant_states.get(room_id, {}).get(other_id, {})
                             await safe_send(
                                 target_ws,
                                 {
@@ -343,8 +358,9 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                                     "id": other_id,
                                     "name": other_name,
                                     "role": other_role,
-                                    "audioEnabled": False,
-                                    "videoEnabled": False,
+                                    "audioEnabled": bool(other_state.get("audioEnabled", False)),
+                                    "videoEnabled": bool(other_state.get("videoEnabled", False)),
+                                    "avatar_url": other_state.get("avatar_url"),
                                 },
                             )
                 continue
@@ -387,6 +403,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 target_ws = rooms.get(room_id, {}).pop(target_id, None)
                 participant_names.get(room_id, {}).pop(target_id, None)
                 client_roles.get(room_id, {}).pop(target_id, None)
+                participant_states.get(room_id, {}).pop(target_id, None)
 
                 if target_ws:
                     await safe_send(target_ws, {"type": "removed", "message": "You have been removed from the meeting."})
@@ -401,7 +418,15 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             if msg_type in {"mute_user", "disable_camera", "control_screen_share", "start_recording", "stop_recording", "start_meeting", "end_meeting"}:
                 if not _host_only(msg_type):
                     continue
-                await broadcast_to_room(room_id, {**msg, "from": client_id}, exclude_id=client_id)
+                if msg_type in {"mute_user", "disable_camera"}:
+                    target_id = msg.get("target_client_id")
+                    if target_id:
+                        state_bucket = participant_states.setdefault(room_id, {}).setdefault(target_id, {})
+                        if msg_type == "mute_user":
+                            state_bucket["audioEnabled"] = False
+                        if msg_type == "disable_camera":
+                            state_bucket["videoEnabled"] = False
+                await broadcast_to_room(room_id, {**msg, "from": client_id})
                 continue
 
             if msg_type in {"offer", "answer", "candidate"}:
@@ -460,6 +485,12 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 continue
 
             if msg_type in {"audio-toggle", "video-toggle", "update-state"}:
+                if msg_type == "update-state":
+                    participant_states.setdefault(room_id, {})[client_id] = {
+                        "audioEnabled": bool(msg.get("audioEnabled", False)),
+                        "videoEnabled": bool(msg.get("videoEnabled", False)),
+                        "avatar_url": msg.get("avatar_url"),
+                    }
                 await broadcast_to_room(room_id, {**msg, "from": client_id}, exclude_id=client_id)
                 continue
 
@@ -494,6 +525,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             rooms.get(room_id, {}).pop(client_id, None)
             participant_names.get(room_id, {}).pop(client_id, None)
             client_roles.get(room_id, {}).pop(client_id, None)
+            participant_states.get(room_id, {}).pop(client_id, None)
 
             if rooms.get(room_id):
                 await broadcast_to_room(room_id, {"type": "user-left", "id": client_id})
@@ -516,13 +548,42 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                             pass
                     waiting_rooms[room_id] = []
 
-                    await broadcast_to_room(
-                        room_id,
-                        {
-                            "type": "host-left-continue",
-                            "message": "Host left the meeting. Other participants can continue.",
-                        },
-                    )
+                    remaining_ids = list(rooms.get(room_id, {}).keys())
+                    if remaining_ids:
+                        new_host_id = remaining_ids[0]
+                        room_hosts[room_id] = new_host_id
+                        client_roles.setdefault(room_id, {})[new_host_id] = "host"
+                        promoted_name = participant_names.get(room_id, {}).get(new_host_id, "Participant")
+
+                        await safe_send(
+                            rooms[room_id][new_host_id],
+                            {
+                                "type": "host-transferred",
+                                "host_id": new_host_id,
+                                "host_name": promoted_name,
+                                "role": "host",
+                                "message": "You are now the host.",
+                            },
+                        )
+                        await broadcast_to_room(
+                            room_id,
+                            {
+                                "type": "host-transferred",
+                                "host_id": new_host_id,
+                                "host_name": promoted_name,
+                                "message": f"Host left. {promoted_name} is now the host.",
+                            },
+                            exclude_id=new_host_id,
+                        )
+                        await broadcast_to_room(
+                            room_id,
+                            {
+                                "type": "host-left-continue",
+                                "message": f"Host left the meeting. {promoted_name} is now host.",
+                            },
+                        )
+                    else:
+                        rooms[room_id] = {}
                 else:
                     for entry in waiting_rooms.get(room_id, []):
                         await safe_send(entry["ws"], {
@@ -551,6 +612,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 waiting_rooms.pop(room_id, None)
                 participant_names.pop(room_id, None)
                 client_roles.pop(room_id, None)
+                participant_states.pop(room_id, None)
 
 
 @router.websocket("/ws-guest/{room_id}")
