@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -32,7 +33,11 @@ MAX_EMAIL_RETRIES = 2
 RETRY_DELAY_SECONDS = 60
 
 
+_persistent_jobstore = None
+
+
 def _build_scheduler():
+    global _persistent_jobstore
     scheduler_kwargs = {
         "timezone": "UTC",
         "job_defaults": {
@@ -42,8 +47,9 @@ def _build_scheduler():
         },
     }
     if DATABASE_URL:
+        _persistent_jobstore = SQLAlchemyJobStore(url=DATABASE_URL)
         scheduler_kwargs["jobstores"] = {
-            "default": SQLAlchemyJobStore(url=DATABASE_URL)
+            "default": _persistent_jobstore
         }
     else:
         logger.warning("DATABASE_URL is not set. Scheduler persistence is disabled.")
@@ -81,6 +87,36 @@ def _schedule_retry(job_func, args, job_id: str):
         id=job_id,
         replace_existing=True,
     )
+
+
+def _ensure_scheduler_jobstore_ready() -> bool:
+    """
+    Ensure SQLAlchemy jobstore table exists before scheduler starts polling.
+    Falls back to in-memory store if persistent store cannot be initialized.
+    """
+    if not _persistent_jobstore:
+        return True
+
+    try:
+        _persistent_jobstore.jobs_t.create(_persistent_jobstore.engine, checkfirst=True)
+        return True
+    except Exception as exc:
+        logger.exception(
+            "Failed to initialize scheduler SQL jobstore table. "
+            "Falling back to in-memory scheduler store: %s",
+            exc,
+        )
+        return False
+
+
+def _switch_to_memory_jobstore():
+    """Replace failing SQL jobstore with memory jobstore."""
+    try:
+        scheduler.remove_jobstore("default")
+    except Exception:
+        pass
+    scheduler.add_jobstore(MemoryJobStore(), alias="default")
+    logger.warning("Scheduler switched to MemoryJobStore (jobs won't persist across restarts).")
 
 
 # -----------------------------
@@ -307,6 +343,8 @@ def cleanup_orphaned_scheduled_jobs():
                 if not meeting:
                     job.remove()
                     logger.info(f"Removed orphaned job for meeting {meeting_id}")
+    except (ProgrammingError, OperationalError) as exc:
+        logger.warning("Skipping orphaned-job cleanup because job store is not ready: %s", exc)
     except Exception as exc:
         logger.error(f"Failed to cleanup orphaned jobs: {exc}")
 
@@ -320,6 +358,9 @@ def start_all_schedulers():
     if scheduler.running:
         logger.info("Scheduler already running, skipping start")
         return
+
+    if not _ensure_scheduler_jobstore_ready():
+        _switch_to_memory_jobstore()
 
     scheduler.add_job(
         delete_expired_meetings,
@@ -337,7 +378,12 @@ def start_all_schedulers():
         misfire_grace_time=3600,
     )
 
-    scheduler.start()
+    try:
+        scheduler.start()
+    except (ProgrammingError, OperationalError) as exc:
+        logger.exception("Failed to start scheduler with current jobstore: %s", exc)
+        _switch_to_memory_jobstore()
+        scheduler.start()
     logger.info("Unified scheduler started with all jobs")
 
 
