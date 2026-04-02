@@ -15,6 +15,7 @@ from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import joinedload
 
 from backend.core.config import DATABASE_URL
@@ -349,14 +350,27 @@ def shutdown_all_schedulers():
 
 def get_scheduler_status():
     """Get current scheduler status and job list."""
+    try:
+        jobs = scheduler.get_jobs()
+        scheduler_error = None
+    except (ProgrammingError, OperationalError) as exc:
+        logger.warning("Scheduler status unavailable because job store is not ready: %s", exc)
+        jobs = []
+        scheduler_error = "jobstore_not_ready"
+    except Exception as exc:
+        logger.exception("Unexpected scheduler status failure: %s", exc)
+        jobs = []
+        scheduler_error = str(exc)
+
     return {
         "running": scheduler.running,
+        "error": scheduler_error,
         "jobs": [
             {
                 "id": job.id,
                 "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
                 "trigger": str(job.trigger),
             }
-            for job in scheduler.get_jobs()
+            for job in jobs
         ],
     }

@@ -124,7 +124,8 @@ async def full_health_check():
             "scheduler": {
                 "enabled": SCHEDULER_ENABLED,
                 "running": scheduler_status.get("running", False),
-                "jobs_count": len(scheduler_status.get("jobs", []))
+                "jobs_count": len(scheduler_status.get("jobs", [])),
+                "error": scheduler_status.get("error"),
             }
         }
     })
