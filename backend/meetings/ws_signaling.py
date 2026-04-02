@@ -81,6 +81,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 session_id = msg.get("session_id", "")
                 token = msg.get("token", "")
                 requested_host = bool(msg.get("is_host", False))
+                incoming_audio_enabled = bool(msg.get("audioEnabled", False))
+                incoming_video_enabled = bool(msg.get("videoEnabled", False))
 
                 db = SessionLocal()
                 try:
@@ -162,7 +164,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                                 other_role = client_roles.get(room_id, {}).get(other_id, "guest")
                                 await safe_send(
                                     websocket,
-                                    {"type": "user-joined", "id": other_id, "name": other_name, "role": other_role},
+                                    {
+                                        "type": "user-joined",
+                                        "id": other_id,
+                                        "name": other_name,
+                                        "role": other_role,
+                                        "audioEnabled": False,
+                                        "videoEnabled": False,
+                                    },
                                 )
 
                         for entry in waiting_rooms[room_id]:
@@ -192,7 +201,15 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
 
                         await broadcast_to_room(
                             room_id,
-                            {"type": "user-joined", "id": client_id, "name": user_name, "role": "host", "is_host": True},
+                            {
+                                "type": "user-joined",
+                                "id": client_id,
+                                "name": user_name,
+                                "role": "host",
+                                "is_host": True,
+                                "audioEnabled": incoming_audio_enabled,
+                                "videoEnabled": incoming_video_enabled,
+                            },
                             exclude_id=client_id,
                         )
                     else:
@@ -201,7 +218,15 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                             w for w in waiting_rooms.get(room_id, []) if w["client_id"] != client_id
                         ]
                         waiting_rooms[room_id].append(
-                            {"client_id": client_id, "name": user_name, "session_id": session_id, "role": role, "ws": websocket}
+                            {
+                                "client_id": client_id,
+                                "name": user_name,
+                                "session_id": session_id,
+                                "role": role,
+                                "ws": websocket,
+                                "audioEnabled": incoming_audio_enabled,
+                                "videoEnabled": incoming_video_enabled,
+                            }
                         )
                         is_in_waiting = True
 
@@ -286,6 +311,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     target_ws = target_entry["ws"]
                     target_name = target_entry["name"]
                     target_role = target_entry.get("role", "guest")
+                    target_audio_enabled = bool(target_entry.get("audioEnabled", False))
+                    target_video_enabled = bool(target_entry.get("videoEnabled", False))
                     guest_session_manager.approve_guest(room_id, target_id)
 
                     rooms[room_id][target_id] = target_ws
@@ -295,7 +322,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                     await safe_send(target_ws, {"type": "approved", "message": "You have been approved to join the meeting."})
                     await broadcast_to_room(
                         room_id,
-                        {"type": "user-joined", "id": target_id, "name": target_name, "role": target_role},
+                        {
+                            "type": "user-joined",
+                            "id": target_id,
+                            "name": target_name,
+                            "role": target_role,
+                            "audioEnabled": target_audio_enabled,
+                            "videoEnabled": target_video_enabled,
+                        },
                     )
 
                     for other_id in list(rooms[room_id].keys()):
@@ -304,7 +338,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                             other_role = client_roles.get(room_id, {}).get(other_id, "guest")
                             await safe_send(
                                 target_ws,
-                                {"type": "user-joined", "id": other_id, "name": other_name, "role": other_role},
+                                {
+                                    "type": "user-joined",
+                                    "id": other_id,
+                                    "name": other_name,
+                                    "role": other_role,
+                                    "audioEnabled": False,
+                                    "videoEnabled": False,
+                                },
                             )
                 continue
 
