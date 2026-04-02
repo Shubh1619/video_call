@@ -21,22 +21,57 @@ api_instance = sib_api_v3_sdk.TransactionalEmailsApi(
 # âœ… SAFE EMAIL SENDER (BREVO)
 # ------------------------------
 async def safe_send_email(recipients, subject, html):
+    normalized_recipients = list(
+        dict.fromkeys((str(r or "").strip().lower() for r in recipients if str(r or "").strip()))
+    )
+    if not normalized_recipients:
+        logger.error("Email send skipped: no recipients provided for subject '%s'", subject)
+        return False
+    if not MAIL_CONFIG.get("BREVO_API_KEY"):
+        logger.error("Email send failed: BREVO_API_KEY is not configured")
+        return False
+    if not MAIL_CONFIG.get("MAIL_FROM"):
+        logger.error("Email send failed: MAIL_FROM is not configured")
+        return False
+
     try:
         email = sib_api_v3_sdk.SendSmtpEmail(
-            to=[{"email": r} for r in recipients],
+            to=[{"email": r} for r in normalized_recipients],
             sender={
-                "name": "Meeting",
+                "name": MAIL_CONFIG.get("MAIL_FROM_NAME") or "Meeting",
                 "email": MAIL_CONFIG["MAIL_FROM"]
             },
             subject=subject,
             html_content=html
         )
 
-        api_instance.send_transac_email(email)
-        logger.info("âœ… Email sent via Brevo")
+        response = api_instance.send_transac_email(email)
+        message_id = getattr(response, "message_id", None) or getattr(response, "messageId", None)
+        logger.info(
+            "Email accepted by Brevo: message_id=%s recipients=%s subject=%s",
+            message_id,
+            normalized_recipients,
+            subject,
+        )
+        return True
 
     except ApiException as e:
-        logger.error(f"âŒ Brevo error: {e}")
+        logger.error(
+            "Brevo API error while sending email: status=%s body=%s recipients=%s subject=%s",
+            getattr(e, "status", None),
+            getattr(e, "body", None),
+            normalized_recipients,
+            subject,
+        )
+        return False
+    except Exception as exc:
+        logger.exception(
+            "Unexpected email send error: recipients=%s subject=%s error=%s",
+            normalized_recipients,
+            subject,
+            exc,
+        )
+        return False
 
 
 # ------------------------------
@@ -278,7 +313,7 @@ async def send_password_reset_email(
         color="#d93025",
     )
 
-    await safe_send_email([recipient_email], "Reset your password", html)
+    return await safe_send_email([recipient_email], "Reset your password", html)
 
 
 async def send_email_verification_email(
@@ -311,7 +346,7 @@ async def send_email_verification_email(
         content,
         color="#1a73e8",
     )
-    await safe_send_email([recipient_email], "Verify your email address", html)
+    return await safe_send_email([recipient_email], "Verify your email address", html)
 
 
 async def send_password_change_verification_email(
@@ -344,4 +379,4 @@ async def send_password_change_verification_email(
         content,
         color="#d93025",
     )
-    await safe_send_email([recipient_email], "Confirm your password change", html)
+    return await safe_send_email([recipient_email], "Confirm your password change", html)

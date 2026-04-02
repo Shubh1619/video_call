@@ -44,7 +44,7 @@ from backend.auth.schemas import (
     ConfirmPasswordChangeOtpRequest,
 )
 from backend.core.rate_limit import rate_limit_auth, limiter
-from backend.core.config import MY_DOMAIN
+from backend.core.config import MY_DOMAIN, OTP_EXPIRE_SECONDS
 from backend.email.utils import (
     send_password_reset_email,
     send_email_verification_email,
@@ -57,7 +57,6 @@ logger = logging.getLogger(__name__)
 # Per-email forgot-password throttle: max 5 requests / 15 minutes.
 _FORGOT_PWD_WINDOW = timedelta(minutes=15)
 _FORGOT_PWD_LIMIT = 5
-OTP_EXPIRE_SECONDS = 30
 EMAIL_VERIFY_PURPOSE = "email_verify"
 PASSWORD_CHANGE_PURPOSE = "password_change"
 
@@ -225,15 +224,17 @@ async def register(user: UserCreate, request: Request, db: Session = Depends(get
     )
     db.commit()
 
-    try:
-        await send_email_verification_email(
-            recipient_email=db_user.email,
-            recipient_name=db_user.name,
-            otp_code=otp_code,
-            expires_seconds=OTP_EXPIRE_SECONDS,
+    sent = await send_email_verification_email(
+        recipient_email=db_user.email,
+        recipient_name=db_user.name,
+        otp_code=otp_code,
+        expires_seconds=OTP_EXPIRE_SECONDS,
+    )
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not send verification OTP email. Please try again in a moment.",
         )
-    except Exception as exc:
-        logger.warning("Email verification dispatch failed: %s", exc)
 
     _log_auth_event(db, "register", request, user_id=db_user.id)
     db.commit()
@@ -263,15 +264,17 @@ async def resend_verify_email(payload: VerifyEmailRequest, request: Request, db:
             )
         )
         db.commit()
-        try:
-            await send_email_verification_email(
-                recipient_email=user.email,
-                recipient_name=user.name,
-                otp_code=otp_code,
-                expires_seconds=OTP_EXPIRE_SECONDS,
+        sent = await send_email_verification_email(
+            recipient_email=user.email,
+            recipient_name=user.name,
+            otp_code=otp_code,
+            expires_seconds=OTP_EXPIRE_SECONDS,
+        )
+        if not sent:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Could not send verification OTP email. Please try again in a moment.",
             )
-        except Exception as exc:
-            logger.warning("Resend verification dispatch failed: %s", exc)
         _log_auth_event(db, "email_verify_requested", request, user_id=user.id)
         db.commit()
 
@@ -332,6 +335,20 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"
+        )
+
+    if not bool(user.is_email_verified):
+        _log_auth_event(
+            db,
+            "login_blocked_unverified_email",
+            request,
+            user_id=user.id,
+            metadata={"email": form_data.username},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email with OTP before logging in."
         )
 
     access_token, refresh_token, _ = _create_session_tokens(db, user, request)
@@ -575,15 +592,17 @@ async def change_password(
         )
     )
     db.commit()
-    try:
-        await send_password_change_verification_email(
-            recipient_email=current_user.email,
-            recipient_name=current_user.name,
-            otp_code=otp_code,
-            expires_seconds=OTP_EXPIRE_SECONDS,
+    sent = await send_password_change_verification_email(
+        recipient_email=current_user.email,
+        recipient_name=current_user.name,
+        otp_code=otp_code,
+        expires_seconds=OTP_EXPIRE_SECONDS,
+    )
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not send password change OTP email. Please try again in a moment.",
         )
-    except Exception as exc:
-        logger.warning("Password-change confirmation email dispatch failed: %s", exc)
     _log_auth_event(db, "password_change_requested", request, user_id=current_user.id)
     db.commit()
 

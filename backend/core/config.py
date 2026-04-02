@@ -78,6 +78,11 @@ RATE_LIMIT_AUTH_PER_MINUTE = int(os.getenv("RATE_LIMIT_AUTH_PER_MINUTE", "10"))
 RATE_LIMIT_STRICT_PER_MINUTE = int(os.getenv("RATE_LIMIT_STRICT_PER_MINUTE", "5"))
 
 # -----------------------------
+# OTP CONFIGURATION
+# -----------------------------
+OTP_EXPIRE_SECONDS = int(os.getenv("OTP_EXPIRE_SECONDS", "300"))
+
+# -----------------------------
 # CORS CONFIGURATION (REQUIRED)
 # -----------------------------
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", _cors_origins_raw).split(",")
