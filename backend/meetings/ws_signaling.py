@@ -164,11 +164,29 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                                 )
 
                         for entry in waiting_rooms[room_id]:
-                            await safe_send(websocket, {
-                                "type": "waiting-user",
-                                "client_id": entry["client_id"],
-                                "name": entry["name"],
-                            })
+                            await safe_send(
+                                websocket,
+                                {
+                                    "type": "waiting-user",
+                                    "client_id": entry["client_id"],
+                                    "name": entry["name"],
+                                },
+                            )
+                        await safe_send(
+                            websocket,
+                            {
+                                "type": "waiting-list",
+                                "users": [
+                                    {
+                                        "client_id": entry["client_id"],
+                                        "name": entry["name"],
+                                        "role": entry.get("role", "guest"),
+                                    }
+                                    for entry in waiting_rooms[room_id]
+                                ],
+                                "count": len(waiting_rooms[room_id]),
+                            },
+                        )
 
                         await broadcast_to_room(
                             room_id,
@@ -213,12 +231,23 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
 
                         host_id = room_hosts.get(room_id)
                         if host_id and host_id in rooms.get(room_id, {}):
-                            await safe_send(rooms[room_id][host_id], {
-                                "type": "waiting-user",
-                                "client_id": client_id,
-                                "name": user_name,
-                                "role": role,
-                            })
+                            host_ws = rooms[room_id][host_id]
+                            await safe_send(
+                                host_ws,
+                                {
+                                    "type": "waiting-user",
+                                    "client_id": client_id,
+                                    "name": user_name,
+                                    "role": role,
+                                },
+                            )
+                            await safe_send(
+                                host_ws,
+                                {
+                                    "type": "waiting-room-updated",
+                                    "count": len(waiting_rooms.get(room_id, [])),
+                                },
+                            )
 
                         await safe_send(websocket, {
                             "type": "waiting",
@@ -260,6 +289,22 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 target_id = msg.get("target_client_id")
                 target_entry = next((w for w in waiting_rooms.get(room_id, []) if w["client_id"] == target_id), None)
                 waiting_rooms[room_id] = [w for w in waiting_rooms.get(room_id, []) if w["client_id"] != target_id]
+                if target_id:
+                    await safe_send(
+                        websocket,
+                        {
+                            "type": "waiting-user-left",
+                            "client_id": target_id,
+                            "reason": "approved",
+                        },
+                    )
+                await safe_send(
+                    websocket,
+                    {
+                        "type": "waiting-room-updated",
+                        "count": len(waiting_rooms.get(room_id, [])),
+                    },
+                )
 
                 if target_entry:
                     target_ws = target_entry["ws"]
@@ -293,6 +338,22 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
                 target_id = msg.get("target_client_id")
                 target_entry = next((w for w in waiting_rooms.get(room_id, []) if w["client_id"] == target_id), None)
                 waiting_rooms[room_id] = [w for w in waiting_rooms.get(room_id, []) if w["client_id"] != target_id]
+                if target_id:
+                    await safe_send(
+                        websocket,
+                        {
+                            "type": "waiting-user-left",
+                            "client_id": target_id,
+                            "reason": "denied",
+                        },
+                    )
+                await safe_send(
+                    websocket,
+                    {
+                        "type": "waiting-room-updated",
+                        "count": len(waiting_rooms.get(room_id, [])),
+                    },
+                )
 
                 if target_entry:
                     await safe_send(target_entry["ws"], {"type": "denied", "message": "You have been denied entry to the meeting."})
@@ -396,7 +457,15 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
             waiting_rooms[room_id] = [w for w in waiting_rooms.get(room_id, []) if w["client_id"] != client_id]
             host_id = room_hosts.get(room_id)
             if host_id and host_id in rooms.get(room_id, {}):
-                await safe_send(rooms[room_id][host_id], {"type": "waiting-user-left", "client_id": client_id})
+                host_ws = rooms[room_id][host_id]
+                await safe_send(host_ws, {"type": "waiting-user-left", "client_id": client_id})
+                await safe_send(
+                    host_ws,
+                    {
+                        "type": "waiting-room-updated",
+                        "count": len(waiting_rooms.get(room_id, [])),
+                    },
+                )
         else:
             rooms.get(room_id, {}).pop(client_id, None)
             participant_names.get(room_id, {}).pop(client_id, None)
