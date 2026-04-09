@@ -61,10 +61,7 @@ def check_permission(role: str, action: str, meeting: Meeting) -> tuple[bool, st
                 "Feature disabled by host" if not meeting.allow_user_screen_share else "",
             )
         if role == "guest":
-            return (
-                bool(meeting.allow_guest_screen_share),
-                "Feature disabled by host" if not meeting.allow_guest_screen_share else "",
-            )
+            return True, ""
         return False, "Permission denied"
 
     return False, "Permission denied"
@@ -79,4 +76,3 @@ def resolve_role_for_user(meeting: Meeting, participant_row: Participant | None,
         if participant_row.role in {"participant", "user"}:
             return "user"
     return "guest"
-
