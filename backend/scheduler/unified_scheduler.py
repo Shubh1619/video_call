@@ -23,7 +23,6 @@ from backend.core.config import DATABASE_URL
 from backend.email.db import SessionLocal
 from backend.email.utils import send_meeting_reminder, send_note_reminder_email_async
 from backend.models.meeting import Meeting
-from backend.services.time_service import to_db_utc_naive
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -286,45 +285,11 @@ def send_note_reminder_job(
 
 def delete_expired_meetings():
     """
-    Delete expired meetings:
-    - Instant meetings older than 2 hours
-    - Scheduled meetings 30 minutes after end time
+    Auto-delete for meetings is disabled.
+    Keep this function as a safe no-op for backward compatibility with
+    admin/manual cleanup callers.
     """
-    now = get_utc_now()
-    instant_cutoff = to_db_utc_naive(now - timedelta(hours=2))
-    scheduled_cutoff = to_db_utc_naive(now - timedelta(minutes=30))
-
-    try:
-        with SessionLocal() as db:
-            instant_expired = db.query(Meeting).filter(
-                Meeting.meeting_type == "instant",
-                Meeting.scheduled_start <= instant_cutoff,
-            ).all()
-
-            scheduled_expired = db.query(Meeting).filter(
-                Meeting.meeting_type.in_(["regular", "scheduled"]),
-                Meeting.scheduled_end <= scheduled_cutoff,
-            ).all()
-
-            to_delete = instant_expired + scheduled_expired
-            count = len(to_delete)
-
-            for meeting in to_delete:
-                db.delete(meeting)
-
-            db.commit()
-
-            if count > 0:
-                logger.info(
-                    "Deleted %s expired meetings (instant: %s, scheduled: %s)",
-                    count,
-                    len(instant_expired),
-                    len(scheduled_expired),
-                )
-            else:
-                logger.info("No expired meetings to delete")
-    except Exception as exc:
-        logger.error(f"Cleanup error: {exc}")
+    logger.info("Expired meeting auto-delete skipped: feature disabled")
 
 
 def cleanup_orphaned_scheduled_jobs():
@@ -361,14 +326,6 @@ def start_all_schedulers():
 
     if not _ensure_scheduler_jobstore_ready():
         _switch_to_memory_jobstore()
-
-    scheduler.add_job(
-        delete_expired_meetings,
-        IntervalTrigger(minutes=5),
-        id="cleanup_expired_meetings",
-        replace_existing=True,
-        misfire_grace_time=600,
-    )
 
     scheduler.add_job(
         cleanup_orphaned_scheduled_jobs,
